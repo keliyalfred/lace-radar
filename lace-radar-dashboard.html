@@ -135,6 +135,35 @@ td.t-el{max-width:240px}
 .combo .x{color:var(--muted);font-size:11px;align-self:center}
 .combo .v{font-family:Fraunces;font-size:13px;color:var(--ink);white-space:nowrap}
 .combo .v small{color:var(--muted);font-family:Inter;font-size:9.5px}
+/* combos redesign */
+.crow{border:1px solid var(--line);border-radius:9px;margin-bottom:9px;overflow:hidden;background:var(--paper)}
+.crow .ch{display:flex;align-items:center;gap:12px;padding:9px 11px;cursor:pointer}
+.crow .ch:hover{background:var(--line-soft)}
+.combo-name{display:flex;align-items:center;gap:6px;min-width:170px}
+.combo-name .pill{font-size:11.5px;background:var(--mauve-soft);color:var(--mauve);padding:2px 9px;border-radius:99px;white-space:nowrap}
+.combo-name .lacepill{background:var(--ink);color:#fff}
+.combo-name .x{color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;flex:1}
+.chip{font-size:10.5px;color:var(--muted);background:var(--paper);border:1px solid var(--line);border-radius:99px;padding:2px 9px;white-space:nowrap}
+.chip b{color:var(--ink);font-variant-numeric:tabular-nums}
+.chip.hot b{color:var(--mauve)}
+.chip.new b{color:var(--teal)}
+.crow .sc{font-family:Fraunces;font-size:15px;color:var(--mauve);min-width:30px;text-align:right}
+.crow .exp{color:var(--muted);font-size:11px;width:14px;text-align:center;transition:transform .15s}
+.crow.open .exp{transform:rotate(90deg)}
+.crow .drill{border-top:1px dashed var(--line);padding:6px 11px 9px;display:none;background:var(--panel)}
+.crow.open .drill{display:block}
+.mini{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line-soft)}
+.mini:last-child{border-bottom:none}
+.mini img{width:42px;height:42px;border-radius:6px;object-fit:cover;background:var(--line-soft);cursor:zoom-in;flex:none}
+.mini .mt{flex:1;min-width:0}
+.mini .mt a{font-size:11px;color:var(--ink);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini .mt a:hover{color:var(--mauve)}
+.mini .mm{font-size:10px;color:var(--muted);display:flex;gap:9px;flex-wrap:wrap;margin-top:2px}
+.mini .mm b{color:var(--ink)}
+.legend{font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:var(--sh);padding:11px 14px;margin-bottom:16px;line-height:1.7}
+.legend b{color:var(--ink)}
 
 /* ---------- PAGE 3 : selection ---------- */
 .pick{display:grid;grid-template-columns:120px 1fr;gap:14px;background:var(--panel);border:1px solid var(--line);
@@ -193,29 +222,24 @@ td.t-el{max-width:240px}
   <!-- ============ PAGE 2 ============ -->
   <section class="page" id="pg-elem">
     <div class="phead"><h2>元素排列组合</h2>
-      <div class="lead">把每个款拆成元素(蕾丝家族 + 6 轴),看哪些元素在爆。核心信号=重叠度:一个元素在越多款、越多平台反复出现,爆得越明显。</div></div>
+      <div class="lead">蕾丝锁定为底,看该融什么。每个组合(如 lace × tassel)是一个容器——点开看里面有多少新上架、多少增速快,以及排名靠前的实际款式。</div></div>
 
     <div class="weights" id="elem-weights"></div>
 
     <div class="cols2">
       <div>
         <div class="panel">
-          <h3>高能元素榜</h3>
-          <div class="note">单个元素综合排序。可按重叠/销量/新鲜度任一维度重排(下方权重)。</div>
+          <h3>蕾丝组合榜 · 配方</h3>
+          <div class="note">「蕾丝 × 某元素」的组合,按 增速/新鲜/销量/复现 综合排。点一行展开排名靠前的款式。</div>
           <div class="controls" style="margin-bottom:12px" id="elem-ctl"></div>
-          <div id="elem-rank"></div>
+          <div id="elem-combo"></div>
         </div>
       </div>
       <div>
         <div class="panel">
-          <h3>跨平台重叠</h3>
-          <div class="note">在 ≥2 个平台同时出现的元素 = 最硬的爆发信号。</div>
-          <div id="elem-cross"></div>
-        </div>
-        <div class="panel">
-          <h3>重叠组合矩阵 · 配方</h3>
-          <div class="note">哪些元素总是同时出现在爆款上 = 值得融进蕾丝的"组合配方"。</div>
-          <div id="elem-combo"></div>
+          <h3>可迁移元素</h3>
+          <div class="note">最值得融进蕾丝的非蕾丝元素(廓形/袖/细节/风格…),按 增速+新鲜+销量+出现频次 排。</div>
+          <div class="tlist" id="elem-rank"></div>
         </div>
       </div>
     </div>
@@ -224,7 +248,11 @@ td.t-el{max-width:240px}
   <!-- ============ PAGE 3 ============ -->
   <section class="page" id="pg-pick">
     <div class="phead"><h2>选品输出</h2>
-      <div class="lead">按"命中多少高能元素/热组合 + 跨平台覆盖 + 销量 + 增速 + 新鲜度"综合排序。每个款附排序理由。</div></div>
+      <div class="lead">排序主轴 = 增速 + 上架新鲜 + 销量(三者为主),再加命中的蕾丝热组合。每款附排序理由。</div></div>
+    <div class="legend">
+      <b>选款标准</b>:① 增速(还在涨)② 上架新鲜(越新越早期)③ 销量(<b>平台内排名</b>,非绝对值)④ 命中蕾丝热组合(配方)。四项权重在第②页可调。<br>
+      <b>关于销量口径</b>:Amazon = <b>月销</b>;AE / SHEIN / Temu = 插件抓的<b>累计销量</b>(上架至今总量)。两者口径不同 <b>不直接比绝对值</b>,打分时按各平台内排名归一。
+    </div>
     <div class="controls" id="pick-ctl"></div>
     <div id="pick-list"></div>
   </section>
@@ -371,7 +399,8 @@ function cleanCat(s){if(!s)return "";return String(s).replace(/（排名[:：]?\
 let RAW=[];          // normalized rows
 let TAGGED=[];       // rows with .elements
 let ELEM=[];         // element aggregates
-let COMBOS=[];       // co-occurrence pairs
+let COMBOS=[];       // 蕾丝×非蕾丝 组合
+let PRODUCT_COMBOS={}; // product_id -> [combos]
 
 function platformOf(r){return (r.platform||"").toLowerCase();}
 function salesOf(r){ // 平台口径不同:Amazon 用月销;其余用 sold(累计)。返回 {val, kind}
@@ -461,33 +490,63 @@ function buildElements(rows){
   });
   return arr;
 }
-/* —— 共现组合 —— */
+/* —— 蕾丝×非蕾丝 组合(锁定蕾丝,看融什么)。每个组合=一个容器,带子指标+款式 —— */
 function buildCombos(rows){
+  const total=rows.length||1;
+  const ec={}; // 单元素出现产品数(算关联强度)
+  rows.forEach(r=>{const seen=new Set();r.elements.forEach(e=>{if(!seen.has(e.key)){seen.add(e.key);ec[e.key]=(ec[e.key]||0)+1;}});});
+  const ax=k=>{const f=FLAT.find(x=>x.key===k);return f?f.axis:"";};
+  const lab=k=>{const f=FLAT.find(x=>x.key===k);return f?f.label:k;};
   const pair={};
   rows.forEach(r=>{
-    const ks=r.elements.map(e=>e.key);
+    const ks=[...new Set(r.elements.map(e=>e.key))];
     for(let i=0;i<ks.length;i++)for(let j=i+1;j<ks.length;j++){
-      const a=ks[i],b=ks[j]; const id=a<b?a+"|"+b:b+"|"+a;
-      const p=pair[id]||(pair[id]={a:a<b?a:b,b:a<b?b:a,n:0,plats:new Set()});
-      p.n++; p.plats.add(r.platform);
+      let a=ks[i],b=ks[j];
+      const laceA=ax(a)==="lace", laceB=ax(b)==="lace";
+      if(laceA===laceB) continue;            // 只要"蕾丝×非蕾丝"
+      if(laceB){const t=a;a=b;b=t;}          // a=蕾丝, b=非蕾丝
+      const id=a+"|"+b;
+      const p=pair[id]||(pair[id]={a,b,prods:new Map()});
+      if(!p.prods.has(r.id)) p.prods.set(r.id,r);   // 同款去重
     }
   });
-  const lab=k=>{const f=FLAT.find(x=>x.key===k);return f?f.label:k;};
-  const ax=k=>{const f=FLAT.find(x=>x.key===k);return f?f.axis:"";};
-  return Object.values(pair)
-    .filter(p=>p.n>=2 && !(ax(p.a)==="lace"&&ax(p.b)==="lace")) // 至少同现2次;过滤蕾丝内部自相关
-    .map(p=>({a:lab(p.a),b:lab(p.b),n:p.n,platforms:p.plats.size}))
-    .sort((x,y)=> (y.n*y.platforms)-(x.n*x.platforms))
-    .slice(0,14);
+  const combos=Object.values(pair).map(p=>{
+    const prods=[...p.prods.values()]; const n=prods.length;
+    const newCount=prods.filter(r=>{const d=daysSince(r.listing_date);return d!=null&&d<=60;}).length;
+    const fastCount=prods.filter(r=>r._growth!=null&&r._growth>=0.2).length;
+    const salesHeat=prods.reduce((s,r)=>s+(r._salesW??0),0)/n;
+    const recHeat=prods.reduce((s,r)=>s+recencyW(r),0)/n;
+    const gArr=prods.filter(r=>r._growth!=null).map(r=>r._growth);
+    const growthHeat=gArr.length?gArr.reduce((a,b)=>a+b,0)/gArr.length:null;
+    const platforms=new Set(prods.map(r=>r.platform)).size;
+    const lift=(ec[p.a]&&ec[p.b])?(n*total)/(ec[p.a]*ec[p.b]):0;
+    return {a:lab(p.a),b:lab(p.b),aKey:p.a,bKey:p.b,prods,n,newCount,fastCount,
+      salesHeat,recHeat,growthHeat,platforms,lift};
+  }).filter(c=>c.n>=2);
+  // 反查:每款属于哪些组合
+  PRODUCT_COMBOS={};
+  combos.forEach(c=>c.prods.forEach(r=>{(PRODUCT_COMBOS[r.id]=PRODUCT_COMBOS[r.id]||[]).push(c);}));
+  return combos;
 }
 
 /* ============================================================
-   权重(高能元素榜 / 选品 共用,可调)
+   权重 & 评分 —— 核心判断:增速 + 上架新鲜 + 销量,组合强度为辅
    ============================================================ */
-const W={overlap:40, sales:25, rec:20, growth:15};
-function elemScore(e){
-  const g=e.nGrowth!=null?e.nGrowth:e.nRec; // 增速缺失时用新鲜度兜底
-  return (W.overlap*e.nOverlap + W.sales*e.nSales + W.rec*e.nRec + W.growth*g)/100*100;
+const W={growth:30, recency:25, sales:25, combo:20};
+const W_LABEL={growth:"增速", recency:"上架新鲜", sales:"销量", combo:"组合强度"};
+function growthW(r){ return r._growth!=null ? Math.max(0,Math.min(1, r._growth/0.5)) : 0; } // +50%=满
+// 组合排序分:增速 + 新鲜/新品占比 + 销量 + (复现×关联)
+function comboScore(c){
+  const g=c.growthHeat!=null?Math.max(0,Math.min(1,c.growthHeat/0.5)):0;
+  const newRatio=Math.min(1,c.newCount/Math.max(1,c.n));
+  const recur=Math.min(1,Math.log2(1+c.n)/4);        // 复现度(log)
+  const lift=Math.min(1,c.lift/3);                   // 关联强度
+  return (W.growth*g + W.recency*(0.5*c.recHeat+0.5*newRatio) + W.sales*c.salesHeat + W.combo*(0.6*recur+0.4*lift));
+}
+// 非蕾丝元素(可迁移)排序分
+function transferScore(e,maxN){
+  const g=e.nGrowth!=null?e.nGrowth:0;
+  return (W.growth*g + W.recency*e.nRec + W.sales*e.nSales + W.combo*Math.min(1,e.products/(maxN||1)));
 }
 
 /* ============================================================
@@ -617,73 +676,91 @@ function renderRaw(){
 }
 
 /* ---- PAGE 2 ---- */
-const elemState={axis:"all"};
+const elemState={sort:"score"};
 function buildWeights(){
   const w=$("#elem-weights"); w.innerHTML="";
-  const lead=el("div","w");lead.innerHTML=`<span style="color:var(--ink);font-weight:600">综合权重</span><span>重叠为主 · 可调</span>`;w.appendChild(lead);
-  const mk=(k,lab)=>{
+  const lead=el("div","w");lead.innerHTML=`<span style="color:var(--ink);font-weight:600">综合权重</span><span>增速·新鲜·销量为主 · 可调</span>`;w.appendChild(lead);
+  const mk=(k)=>{
     const d=el("div","w");
-    d.innerHTML=`<span>${lab} <b>${W[k]}</b></span>`;
-    const inp=el("input");inp.type="range";inp.min=0;inp.max=60;inp.step=5;inp.value=W[k];
+    d.innerHTML=`<span>${W_LABEL[k]} <b>${W[k]}</b></span>`;
+    const inp=el("input");inp.type="range";inp.min=0;inp.max=50;inp.step=5;inp.value=W[k];
     inp.oninput=()=>{W[k]=+inp.value;d.querySelector("b").textContent=W[k];renderElem();renderPick();};
     d.appendChild(inp);return d;
   };
-  w.appendChild(mk("overlap","重叠度"));
-  w.appendChild(mk("sales","跨平台销量"));
-  w.appendChild(mk("rec","新鲜度"));
-  w.appendChild(mk("growth","增速"));
+  ["growth","recency","sales","combo"].forEach(k=>w.appendChild(mk(k)));
   const tip=el("div","w");tip.style.marginLeft="auto";
-  tip.innerHTML=`<span style="color:var(--muted)">增速需多次扫描积累,缺失时由新鲜度兜底</span>`;w.appendChild(tip);
+  tip.innerHTML=`<span style="color:var(--muted)">增速需多次扫描才有值,现在多为 0</span>`;w.appendChild(tip);
 }
 function buildElemControls(){
   const c=$("#elem-ctl");c.innerHTML="";
   const seg=el("div","seg");
-  [["all","全部"],...Object.entries(AXIS_LABEL)].forEach(([k,l])=>{
-    const b=el("button",elemState.axis===k?"on":"",l);
-    b.onclick=()=>{elemState.axis=k;buildElemControls();renderElem();};seg.appendChild(b);
+  [["score","综合"],["newCount","新上架"],["fastCount","增速快"],["salesHeat","销量"],["n","复现"]].forEach(([k,l])=>{
+    const b=el("button",elemState.sort===k?"on":"",l);
+    b.onclick=()=>{elemState.sort=k;buildElemControls();renderCombos();};seg.appendChild(b);
   });
   c.appendChild(seg);
 }
-function renderElem(){
-  // rank
-  let arr=ELEM.slice();
-  if(elemState.axis!=="all")arr=arr.filter(e=>e.axis===elemState.axis);
-  arr.forEach(e=>e._score=elemScore(e));
-  arr.sort((a,b)=>b._score-a._score);
-  const mxScore=Math.max(1,...arr.map(e=>e._score));
-  const rank=$("#elem-rank");rank.innerHTML="";
-  if(!arr.length){rank.innerHTML=`<div class="state" style="padding:30px"><div>暂无元素命中。等数据进来或调整词库。</div></div>`;}
-  arr.slice(0,24).forEach((e,i)=>{
-    const row=el("div","elrow");
-    row.innerHTML=`<div class="rk">${i+1}</div>
-      <div class="nm"><div class="lab">${esc(e.label)}</div><div class="ax">${AXIS_LABEL[e.axis]}</div>
-        <div class="bar"><i style="width:${(e._score/mxScore*100).toFixed(0)}%"></i></div></div>
-      <div class="sc"><div class="hot">${e._score.toFixed(0)}</div>
-        <div class="plats">${e.platforms}平台 · ${e.products}款</div>
-        <div class="sub">重叠 ${e.overlap}${e.growth!=null?" · 增速 "+(e.growth*100).toFixed(0)+"%":""}</div></div>`;
-    rank.appendChild(row);
-  });
-  // cross-platform overlap
-  const cross=$("#elem-cross");cross.innerHTML="";
-  const cs=ELEM.filter(e=>e.platforms>=2).sort((a,b)=>(b.platforms-a.platforms)||(b.overlap-a.overlap)).slice(0,12);
-  if(!cs.length){cross.innerHTML=`<div class="note" style="color:var(--muted)">目前只有单平台数据。跑插件抓 AE/SHEIN/Temu 后,这里会显示跨平台同时出现的元素 —— 最硬的爆发信号。</div>`;}
-  cs.forEach((e,i)=>{
-    const row=el("div","elrow");
-    row.innerHTML=`<div class="rk">${i+1}</div>
-      <div class="nm"><div class="lab">${esc(e.label)}</div><div class="ax">${e.platSet.join(" · ")}</div></div>
-      <div class="sc"><div class="hot" style="color:var(--teal)">${e.platforms}</div><div class="sub">平台</div></div>`;
-    cross.appendChild(row);
-  });
-  // combos
+function miniProd(r){
+  const s=salesOf(r);
+  const m=el("div","mini");
+  const img=el("img");img.loading="lazy";img.src=r.image||"";img.onerror=()=>{img.style.visibility="hidden";};
+  if(r.image)bindZoom(img,r.image);
+  m.appendChild(img);
+  const mt=el("div","mt");
+  mt.innerHTML=`<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title.slice(0,80))}</a>
+    <div class="mm"><span>${esc(r.platform)}</span><span>${s.kind} <b>${fmt(s.val)}</b></span>
+    <span>上架 <b>${relTime(r.listing_date)}</b></span>${r._growth!=null?`<span>增速 <b>${(r._growth*100).toFixed(0)}%</b></span>`:""}
+    ${r.price!=null?`<span>$<b>${fmt(r.price)}</b></span>`:""}</div>`;
+  m.appendChild(mt);
+  return m;
+}
+function renderCombos(){
   const cb=$("#elem-combo");cb.innerHTML="";
-  if(!COMBOS.length){cb.innerHTML=`<div class="note" style="color:var(--muted)">还没有稳定共现的组合。数据多了会浮现"总是一起出现"的元素配方。</div>`;}
-  COMBOS.forEach(c=>{
-    const row=el("div","combo");
-    row.innerHTML=`<div class="pair"><span class="pill">${esc(c.a)}</span><span class="x">×</span><span class="pill">${esc(c.b)}</span></div>
-      <div class="v">${c.n}<small> 次${c.platforms>1?" · "+c.platforms+"平台":""}</small></div>`;
+  let arr=COMBOS.slice();
+  arr.forEach(c=>c._score=comboScore(c));
+  const k=elemState.sort;
+  arr.sort((a,b)=> k==="score"? b._score-a._score : (b[k]??0)-(a[k]??0));
+  if(!arr.length){cb.innerHTML=`<div class="note" style="color:var(--muted)">还没有"蕾丝×某元素"的稳定组合。数据多了会浮现配方。</div>`;return;}
+  arr.slice(0,26).forEach(c=>{
+    const row=el("div","crow"), head=el("div","ch");
+    head.innerHTML=`<div class="combo-name"><span class="pill lacepill">${esc(c.a)}</span><span class="x">×</span><span class="pill">${esc(c.b)}</span></div>
+      <div class="chips">
+        <span class="chip">款数 <b>${c.n}</b></span>
+        <span class="chip new">新上架 <b>${c.newCount}</b></span>
+        <span class="chip hot">增速快 <b>${c.fastCount}</b></span>
+        <span class="chip">销量热 <b>${(c.salesHeat*100).toFixed(0)}</b></span>
+        <span class="chip">关联 <b>${c.lift.toFixed(1)}×</b></span>
+        ${c.growthHeat!=null?`<span class="chip">均增速 <b>${(c.growthHeat*100).toFixed(0)}%</b></span>`:""}
+      </div>
+      <div class="sc">${c._score.toFixed(0)}</div><div class="exp">▸</div>`;
+    head.onclick=()=>row.classList.toggle("open");
+    row.appendChild(head);
+    const drill=el("div","drill");
+    const top=c.prods.slice().sort((a,b)=>((b._salesW??0)+growthW(b))-((a._salesW??0)+growthW(a))).slice(0,6);
+    top.forEach(r=>drill.appendChild(miniProd(r)));
+    row.appendChild(drill);
     cb.appendChild(row);
   });
 }
+function renderTransfer(){
+  const host=$("#elem-rank");host.innerHTML="";
+  const nonLace=ELEM.filter(e=>e.axis!=="lace");
+  const maxN=Math.max(1,...nonLace.map(e=>e.products));
+  nonLace.forEach(e=>e._t=transferScore(e,maxN));
+  nonLace.sort((a,b)=>b._t-a._t);
+  const mx=Math.max(1,...nonLace.map(e=>e._t));
+  if(!nonLace.length){host.innerHTML=`<div class="note" style="color:var(--muted)">暂无非蕾丝元素命中。</div>`;return;}
+  nonLace.slice(0,20).forEach((e,i)=>{
+    const row=el("div","elrow");
+    row.innerHTML=`<div class="rk">${i+1}</div>
+      <div class="nm"><div class="lab">${esc(e.label)}</div><div class="ax">${AXIS_LABEL[e.axis]}</div>
+        <div class="bar"><i style="width:${(e._t/mx*100).toFixed(0)}%"></i></div></div>
+      <div class="sc"><div class="hot">${e._t.toFixed(0)}</div>
+        <div class="sub">${e.products}款${e.growth!=null?" · 增速 "+(e.growth*100).toFixed(0)+"%":""}</div></div>`;
+    host.appendChild(row);
+  });
+}
+function renderElem(){ renderCombos(); renderTransfer(); }
 
 /* ---- PAGE 3 ---- */
 const pickState={lace:"lace",sort:"score"};
@@ -693,29 +770,28 @@ function buildPickControls(){
     const s=el("select");opts.forEach(o=>{const op=el("option",null,o.l);op.value=o.v;if(o.v===val)op.selected=true;s.appendChild(op);});
     s.onchange=()=>{on(s.value);renderPick();};w.appendChild(s);return w;};
   c.appendChild(sel("范围",[{v:"lace",l:"仅蕾丝候选"},{v:"all",l:"全部(含趋势)"}],pickState.lace,v=>pickState.lace=v));
-  c.appendChild(sel("排序",[{v:"score",l:"综合排序"},{v:"sales",l:"销量"},{v:"recent",l:"最新上架"}],pickState.sort,v=>pickState.sort=v));
+  c.appendChild(sel("排序",[{v:"score",l:"综合排序"},{v:"growth",l:"增速"},{v:"recent",l:"最新上架"},{v:"sales",l:"销量"}],pickState.sort,v=>pickState.sort=v));
   c.appendChild(el("div","spacer"));
   const cnt=el("div","count");cnt.id="pick-count";c.appendChild(cnt);
 }
 function productScore(r){
-  // 命中元素的热度之和(组合越多越高)+ 自身销量 + 新鲜度 + 增速 + 跨平台元素加成
-  let elemSum=0, crossBonus=0;
-  r.elements.forEach(e=>{const ag=elemBy[e.key]; if(ag){elemSum+=elemScore(ag); if(ag.platforms>=2)crossBonus+=8;}});
-  const sw=(r._salesW??0)*40, rw=recencyW(r)*20, gw=(r._growth!=null?Math.max(0,r._growth):0)*15;
-  return {score: elemSum*0.5 + sw + rw + gw + crossBonus, elemSum, sw, rw, gw, crossBonus};
+  const g=growthW(r)*W.growth;
+  const rec=recencyW(r)*W.recency;
+  const sales=(r._salesW??0)*W.sales;
+  let comboB=0;(PRODUCT_COMBOS[r.id]||[]).forEach(c=>comboB+=comboScore(c));
+  comboB=Math.min(W.combo*1.5, comboB*0.05);
+  return {score:g+rec+sales+comboB, g,rec,sales,comboB};
 }
-function reasonFor(r,sc){
-  const hot=r.elements.map(e=>({e,ag:elemBy[e.key]})).filter(o=>o.ag).sort((a,b)=>elemScore(b.ag)-elemScore(a.ag)).slice(0,3);
-  const names=hot.map(o=>`<span class="el">${esc(o.ag.label)}</span>`).join(" × ");
-  const cross=hot.filter(o=>o.ag.platforms>=2).map(o=>o.ag.label);
-  const s=salesOf(r);
-  let parts=[];
-  if(names)parts.push(`命中 ${names}`+(hot.length>1?"(组合)":""));
-  if(cross.length)parts.push(`<b>${cross.length}个元素跨平台重叠</b>`);
-  if(s.val!=null)parts.push(`${s.kind} <b>${fmt(s.val)}</b>`);
-  if(r.listing_date)parts.push(`上架 <b>${relTime(r.listing_date)}</b>`);
+function reasonFor(r){
+  const myC=(PRODUCT_COMBOS[r.id]||[]).slice().sort((a,b)=>comboScore(b)-comboScore(a)).slice(0,2);
+  const comboTxt=myC.map(c=>`<span class="el">${esc(c.a)} × ${esc(c.b)}</span>`).join("、");
+  const s=salesOf(r); let parts=[];
+  if(comboTxt)parts.push(`命中热组合 ${comboTxt}`);
   if(r._growth!=null)parts.push(`增速 <b>${(r._growth*100).toFixed(0)}%</b>`);
+  if(r.listing_date)parts.push(`上架 <b>${relTime(r.listing_date)}</b>`);
+  if(s.val!=null)parts.push(`${s.kind} <b>${fmt(s.val)}</b>`);
   if(r.subcat)parts.push(esc(r.subcat));
+  if(!parts.length)parts.push("基础信号:销量 / 新鲜度");
   return parts.join(" · ");
 }
 function renderPick(){
@@ -724,19 +800,17 @@ function renderPick(){
   data.forEach(r=>r._sc=productScore(r));
   if(pickState.sort==="sales")data.sort((a,b)=>(salesOf(b).val??-1)-(salesOf(a).val??-1));
   else if(pickState.sort==="recent")data.sort((a,b)=>(daysSince(a.listing_date)??1e9)-(daysSince(b.listing_date)??1e9));
+  else if(pickState.sort==="growth")data.sort((a,b)=>(b._growth??-1)-(a._growth??-1));
   else data.sort((a,b)=>b._sc.score-a._sc.score);
-  // 同 id 去重(取最新一次扫描)
   const seen=new Set();data=data.filter(r=>{if(seen.has(r.id))return false;seen.add(r.id);return true;});
   $("#pick-count")&&($("#pick-count").innerHTML=`<b>${data.length}</b> 款`);
   const list=$("#pick-list");list.innerHTML="";
   if(!data.length){list.innerHTML=emptyHtml();return;}
   data.slice(0,40).forEach((r,i)=>{
-    const p=el("div","pick");
-    const ph=el("div","ph");
+    const p=el("div","pick"), ph=el("div","ph");
     const img=el("img");img.loading="lazy";img.src=r.image||"";img.onerror=()=>{img.style.display="none";};
     if(r.image)bindZoom(img,r.image);
-    ph.appendChild(img);ph.appendChild(el("div","rank",i+1));
-    p.appendChild(ph);
+    ph.appendChild(img);ph.appendChild(el("div","rank",i+1));p.appendChild(ph);
     const info=el("div","info");
     info.appendChild(el("div","ttl",`<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title.slice(0,110))}</a>`));
     const s=salesOf(r);
@@ -746,9 +820,8 @@ function renderPick(){
       (r.potential>0?`<span>潜力 <b>${(+r.potential).toFixed(1)}</b></span>`:"")+
       `<span>综合分 <b>${r._sc.score.toFixed(0)}</b></span>`+
       `<span>${esc(r.platform)}</span>`));
-    info.appendChild(el("div","why",reasonFor(r,r._sc)));
-    p.appendChild(info);
-    list.appendChild(p);
+    info.appendChild(el("div","why",reasonFor(r)));
+    p.appendChild(info);list.appendChild(p);
   });
 }
 
