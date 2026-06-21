@@ -71,27 +71,34 @@ main{padding:22px 0 80px}
 .spacer{flex:1}
 .count{font-size:11.5px;color:var(--muted)}.count b{color:var(--ink)}
 
-/* ---------- PAGE 1 : raw material gallery ---------- */
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:14px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
-  display:flex;flex-direction:column;box-shadow:var(--sh);transition:transform .12s,box-shadow .12s}
-.card:hover{transform:translateY(-2px);box-shadow:0 4px 10px rgba(26,23,32,.08),0 16px 36px rgba(26,23,32,.07)}
-.thumb{position:relative;aspect-ratio:1/1;background:var(--line-soft);overflow:hidden}
-.thumb img{width:100%;height:100%;object-fit:cover;display:block}
-.thumb .plat{position:absolute;top:7px;left:7px;font-size:9.5px;letter-spacing:.05em;
-  background:rgba(26,23,32,.78);color:#fff;padding:2px 7px;border-radius:99px;text-transform:uppercase}
-.thumb .lace{position:absolute;top:7px;right:7px;font-size:9.5px;background:var(--mauve);color:#fff;
-  padding:2px 7px;border-radius:99px}
-.card .body{padding:9px 10px 11px;display:flex;flex-direction:column;gap:6px}
-.card .ttl{font-size:11.5px;line-height:1.35;max-height:3.1em;overflow:hidden;color:var(--ink)}
-.card .ttl a:hover{color:var(--mauve)}
-.metrics{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:10.5px;color:var(--muted)}
-.metrics .m b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
-.metrics .big b{color:var(--mauve);font-size:13px;font-family:Fraunces}
-.tags{display:flex;flex-wrap:wrap;gap:3px;margin-top:1px}
-.tag{font-size:9.5px;color:var(--mauve);background:var(--mauve-soft);padding:1px 6px;border-radius:99px}
+/* ---------- PAGE 1 : raw material table ---------- */
+.tablewrap{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh);
+  overflow:auto;max-height:calc(100vh - 218px)}
+table.raw{width:100%;border-collapse:separate;border-spacing:0;font-size:11.5px;min-width:1120px}
+table.raw thead th{position:sticky;top:0;z-index:5;background:var(--panel);color:var(--muted);font-weight:600;
+  text-align:left;font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:11px 10px;
+  border-bottom:1px solid var(--line);white-space:nowrap}
+table.raw thead th.s{cursor:pointer;user-select:none}
+table.raw thead th.s:hover{color:var(--ink)}
+table.raw thead th.num{text-align:right}
+table.raw thead th .ar{color:var(--mauve);margin-left:3px}
+table.raw tbody td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+table.raw tbody tr:hover{background:var(--line-soft)}
+table.raw tbody tr:last-child td{border-bottom:none}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+td.num b{font-weight:600;color:var(--ink)}
+.thumb-s{width:50px;height:50px;border-radius:7px;object-fit:cover;background:var(--line-soft);display:block;cursor:zoom-in}
+td.t-title{max-width:300px;min-width:200px}
+td.t-title a{color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.3}
+td.t-title a:hover{color:var(--mauve)}
+.pbadge{font-size:9.5px;letter-spacing:.04em;background:var(--ink);color:#fff;padding:2px 7px;border-radius:99px;text-transform:uppercase;white-space:nowrap}
+.lacedot{color:var(--mauve);font-weight:600;font-size:10px}
+.sales-b{color:var(--mauve);font-family:Fraunces;font-size:14px}
+td.t-el{max-width:240px}
+.subcell{color:var(--muted);font-size:10.5px;white-space:nowrap}
+.tags{display:flex;flex-wrap:wrap;gap:3px}
+.tag{font-size:9.5px;color:var(--mauve);background:var(--mauve-soft);padding:1px 6px;border-radius:99px;white-space:nowrap}
 .tag.ax{color:var(--teal);background:var(--teal-soft)}
-.prov{display:flex;justify-content:space-between;font-size:9.5px;color:var(--muted);border-top:1px dashed var(--line);padding-top:6px;margin-top:1px}
 
 /* hover zoom overlay */
 #zoom{position:fixed;z-index:80;pointer-events:none;display:none;width:340px;height:340px;
@@ -515,14 +522,6 @@ function buildRawControls(){
   c.appendChild(sel("蕾丝",[{v:"all",l:"全部"},{v:"lace",l:"蕾丝候选"},{v:"trend",l:"趋势信号"}],rawState.lace,v=>rawState.lace=v));
   c.appendChild(sel("细分类目",subs.map(s=>({v:s,l:s==="all"?"全部":s})),rawState.sub,v=>rawState.sub=v));
   c.appendChild(sel("上架",[{v:"all",l:"不限"},{v:"30",l:"近30天"},{v:"60",l:"近60天"},{v:"90",l:"近90天"}],rawState.recent,v=>rawState.recent=v));
-  c.appendChild(sel("排序",[
-    {v:"month_sales",l:"销量"},{v:"potential",l:"潜力指数"},{v:"price",l:"价格"},
-    {v:"reviews",l:"评论数"},{v:"rating",l:"星级"},{v:"listing_date",l:"上架时间"},{v:"scan_ts",l:"抓取时间"}
-  ],rawState.sort,v=>rawState.sort=v));
-  // dir
-  const dw=el("div","ctl");dw.appendChild(el("label",null,"方向"));
-  const seg=el("div","seg");["desc","asc"].forEach(d=>{const b=el("button",rawState.dir===d?"on":"",d==="desc"?"高→低":"低→高");b.onclick=()=>{rawState.dir=d;buildRawControls();renderRaw();};seg.appendChild(b);});
-  dw.appendChild(seg);c.appendChild(dw);
   // search
   const sw=el("div","ctl");sw.appendChild(el("label",null,"搜索标题"));
   const inp=el("input");inp.type="search";inp.placeholder="lace, eyelet, puff…";inp.value=rawState.q;
@@ -543,45 +542,78 @@ function rawFiltered(){
   r.sort((a,b)=>{const va=val(a),vb=val(b);return (va<vb?-1:va>vb?1:0)*dir;});
   return r;
 }
+const RAW_COLS=[
+  {k:"image",label:"图"},
+  {k:"title",label:"标题"},
+  {k:"platform",label:"平台"},
+  {k:"month_sales",label:"销量",s:true,num:true},
+  {k:"price",label:"价",s:true,num:true},
+  {k:"potential",label:"潜力",s:true,num:true},
+  {k:"reviews",label:"评论",s:true,num:true},
+  {k:"rating",label:"星",s:true,num:true},
+  {k:"listing_date",label:"上架",s:true},
+  {k:"subcat",label:"细分类目"},
+  {k:"seller",label:"卖家"},
+  {k:"elements",label:"元素"},
+  {k:"scan_ts",label:"抓取",s:true},
+];
 function renderRaw(){
-  const g=$("#raw-grid"), data=rawFiltered();
-  $("#raw-count")&&($("#raw-count").innerHTML=`<b>${data.length}</b> 款`);
-  g.innerHTML="";
+  const host=$("#raw-grid"), data=rawFiltered();
+  $("#raw-count")&&($("#raw-count").innerHTML=`<b>${data.length}</b> 款 · 点表头排序`);
+  host.innerHTML="";
   if(!data.length){$("#raw-empty").innerHTML=emptyHtml();return;} else $("#raw-empty").innerHTML="";
-  const frag=document.createDocumentFragment();
-  data.forEach(r=>{
-    const s=salesOf(r);
-    const card=el("div","card");
-    const thumb=el("div","thumb");
-    const img=el("img");img.loading="lazy";img.src=r.image||"";img.alt=esc(r.title.slice(0,40));
-    img.onerror=()=>{img.style.display="none";thumb.style.background="var(--mauve-soft)";};
-    if(r.image)bindZoom(img,r.image);
-    thumb.appendChild(img);
-    thumb.appendChild(el("span","plat",esc(r.platform)));
-    if(r._lace)thumb.appendChild(el("span","lace","蕾丝"));
-    card.appendChild(thumb);
-    const body=el("div","body");
-    body.appendChild(el("div","ttl",`<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title.slice(0,90))}</a>`));
-    const m=el("div","metrics");
-    m.innerHTML=`<span class="m big">${s.kind} <b>${fmt(s.val)}</b></span>`+
-      (r.price!=null?`<span class="m">价 <b>$${fmt(r.price)}</b></span>`:"")+
-      (r.potential!=null&&r.potential>0?`<span class="m">潜力 <b>${(+r.potential).toFixed(1)}</b></span>`:"")+
-      (r.reviews!=null?`<span class="m">评论 <b>${fmt(r.reviews)}</b></span>`:"")+
-      (r.rating!=null&&r.rating>0?`<span class="m">★ <b>${(+r.rating).toFixed(1)}</b></span>`:"")+
-      (r.listing_date?`<span class="m">上架 <b>${relTime(r.listing_date)}</b></span>`:"");
-    body.appendChild(m);
-    if(r.subcat)body.appendChild(el("div","metrics",`<span class="m">${esc(r.subcat)}</span>`+(r.seller?`<span class="m">· ${esc(r.seller)}</span>`:"")));
-    // element tags
-    if(r.elements.length){
-      const tg=el("div","tags");
-      r.elements.slice(0,7).forEach(e=>tg.appendChild(el("span","tag"+(e.axis==="lace"?"":" ax"),esc(e.label))));
-      body.appendChild(tg);
-    }
-    body.appendChild(el("div","prov",`<span>${esc(r.source||r.platform)}</span><span>抓取 ${relTime(r.scan_ts)}</span>`));
-    card.appendChild(body);
-    frag.appendChild(card);
+  const wrap=el("div","tablewrap"), tb=el("table","raw");
+  // header
+  const thead=el("thead"), htr=el("tr");
+  RAW_COLS.forEach(c=>{
+    const th=el("th",(c.s?"s ":"")+(c.num?"num":""));
+    th.innerHTML=esc(c.label)+(c.s&&rawState.sort===c.k?`<span class="ar">${rawState.dir==="desc"?"↓":"↑"}</span>`:"");
+    if(c.s)th.onclick=()=>{ if(rawState.sort===c.k)rawState.dir=rawState.dir==="desc"?"asc":"desc"; else {rawState.sort=c.k;rawState.dir="desc";} renderRaw(); };
+    htr.appendChild(th);
   });
-  g.appendChild(frag);
+  thead.appendChild(htr); tb.appendChild(thead);
+  // body
+  const tbody=el("tbody");
+  data.forEach(r=>{
+    const s=salesOf(r), tr=el("tr");
+    // image
+    const tdImg=el("td");
+    const img=el("img","thumb-s");img.loading="lazy";img.src=r.image||"";img.alt="";
+    img.onerror=()=>{img.style.visibility="hidden";};
+    if(r.image)bindZoom(img,r.image);
+    tdImg.appendChild(img); tr.appendChild(tdImg);
+    // title
+    tr.appendChild(el("td","t-title",
+      (r._lace?'<span class="lacedot">蕾丝 · </span>':'')+
+      `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)}</a>`));
+    // platform
+    tr.appendChild(el("td",null,`<span class="pbadge">${esc(r.platform)}</span>`));
+    // sales
+    tr.appendChild(el("td","num",`<span class="sales-b">${fmt(s.val)}</span><div class="subcell">${s.kind}</div>`));
+    // price
+    tr.appendChild(el("td","num",r.price!=null?`<b>$${fmt(r.price)}</b>`:"—"));
+    // potential
+    tr.appendChild(el("td","num",(r.potential!=null&&r.potential>0)?(+r.potential).toFixed(1):"—"));
+    // reviews
+    tr.appendChild(el("td","num",fmt(r.reviews)));
+    // rating
+    tr.appendChild(el("td","num",(r.rating!=null&&r.rating>0)?(+r.rating).toFixed(1):"—"));
+    // listing
+    tr.appendChild(el("td",null,`<span class="subcell">${relTime(r.listing_date)}</span>`));
+    // subcat
+    tr.appendChild(el("td",null,`<span class="subcell">${esc(r.subcat||"—")}</span>`));
+    // seller
+    tr.appendChild(el("td",null,`<span class="subcell">${esc(r.seller||"—")}</span>`));
+    // elements
+    const tdEl=el("td","t-el");
+    if(r.elements.length){const tg=el("div","tags");r.elements.slice(0,6).forEach(e=>tg.appendChild(el("span","tag"+(e.axis==="lace"?"":" ax"),esc(e.label))));tdEl.appendChild(tg);}
+    else tdEl.innerHTML='<span class="subcell">—</span>';
+    tr.appendChild(tdEl);
+    // scan
+    tr.appendChild(el("td",null,`<span class="subcell">${relTime(r.scan_ts)}</span>`));
+    tbody.appendChild(tr);
+  });
+  tb.appendChild(tbody); wrap.appendChild(tb); host.appendChild(wrap);
 }
 
 /* ---- PAGE 2 ---- */
