@@ -397,9 +397,8 @@ function dedupeLatest(rows){const m=new Map();rows.forEach(r=>{const ex=m.get(r.
 // SHEIN 图床(ltwebstatic)防盗链/限流 → 走公共图片代理绕过;其余平台原样
 function proxyImg(u){
   if(!u) return u;
-  if(/ltwebstatic\.com/i.test(u) && u.indexOf("weserv")<0){
-    const noScheme=u.replace(/^https?:\/\//i,"");
-    return "https://images.weserv.nl/?url=ssl:"+noScheme+"&output=webp&w=600";
+  if(/ltwebstatic\.com/i.test(u) && u.indexOf("wsrv")<0 && u.indexOf("weserv")<0){
+    return "https://wsrv.nl/?url="+encodeURIComponent(u)+"&w=600&output=webp";
   }
   return u;
 }
@@ -657,8 +656,9 @@ function renderRaw(){
     const s=salesOf(r), tr=el("tr");
     // image
     const tdImg=el("td");
-    const img=el("img","thumb-s");img.loading="lazy";img.referrerPolicy="no-referrer";img.src=proxyImg(r.image)||"";img.alt="";
-    img.onerror=()=>{img.style.visibility="hidden";};
+    const img=el("img","thumb-s");img.loading="lazy";img.referrerPolicy="no-referrer";img.alt="";
+    img.onerror=()=>{ if(!img._fb&&r.image&&proxyImg(r.image)!==r.image){img._fb=1;img.src=r.image;} else img.style.visibility="hidden"; };
+    img.src=proxyImg(r.image)||"";
     if(r.image)bindZoom(img,r.image);
     tdImg.appendChild(img); tr.appendChild(tdImg);
     // title
