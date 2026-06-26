@@ -164,6 +164,24 @@ td.t-el{max-width:240px}
 .legend{font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
   box-shadow:var(--sh);padding:11px 14px;margin-bottom:16px;line-height:1.7}
 .legend b{color:var(--ink)}
+/* keyword tab */
+.kwlayer{font-size:10px;color:var(--muted);margin:12px 0 5px;letter-spacing:.06em;text-transform:uppercase}
+.kwchip{display:inline-flex;align-items:center;font-size:11.5px;background:var(--mauve-soft);color:var(--mauve);padding:3px 10px;border-radius:99px;margin:0 4px 5px 0}
+.candrow{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line-soft)}
+.candrow:last-child{border-bottom:none}
+.candrow .kw{font-size:13px;font-weight:500}
+.candrow .meta{font-size:10.5px;color:var(--muted);display:flex;gap:11px;flex-wrap:wrap;margin-top:3px}
+.candrow .meta b{color:var(--ink)}
+.candrow .vol{font-family:Fraunces;font-size:15px;color:var(--mauve);text-align:right;min-width:66px}
+.candrow .vol small{display:block;font-family:Inter;font-size:9px;color:var(--muted)}
+.candrow .acts{display:flex;gap:6px;align-items:center}
+.btn{font:inherit;font-size:11.5px;border:1px solid var(--line);background:var(--paper);color:var(--ink);padding:5px 12px;border-radius:7px;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--line-soft)}
+.btn.adopt{background:var(--mauve);color:#fff;border-color:var(--mauve)}
+.btn.adopt:hover{opacity:.9}
+.statusbadge{font-size:10px;padding:2px 9px;border-radius:99px}
+.statusbadge.adopted{background:var(--teal-soft);color:var(--teal)}
+.statusbadge.rejected{background:var(--line-soft);color:var(--muted)}
 
 /* ---------- PAGE 3 : selection ---------- */
 .pick{display:grid;grid-template-columns:120px 1fr;gap:14px;background:var(--panel);border:1px solid var(--line);
@@ -202,6 +220,7 @@ td.t-el{max-width:240px}
       <button data-pg="raw" class="on"><span class="n">01</span>管道原材料</button>
       <button data-pg="elem"><span class="n">02</span>元素排列组合</button>
       <button data-pg="pick"><span class="n">03</span>选品输出</button>
+      <button data-pg="kw"><span class="n">04</span>关键词库</button>
     </nav>
     <div class="status" id="status"><span class="dot"></span>连接中…</div>
   </div>
@@ -255,6 +274,23 @@ td.t-el{max-width:240px}
     </div>
     <div class="controls" id="pick-ctl"></div>
     <div id="pick-list"></div>
+  </section>
+
+  <!-- ============ PAGE 4 ============ -->
+  <section class="page" id="pg-kw">
+    <div class="phead"><h2>关键词库</h2>
+      <div class="lead">在用词 = 雷达正在搜的;候选词 = Sorftime 反查发现的高搜索量/高相关新词。开始搜了的标「已采用」,没动的留「待选择」。</div></div>
+    <div class="panel">
+      <h3>在用词池 <span id="kw-pool-count" class="subcell"></span></h3>
+      <div class="note">雷达每轮实际搜索的 sweep 关键词,按 Layer 分组。</div>
+      <div id="kw-pool"></div>
+    </div>
+    <div class="panel">
+      <h3>候选词 · 待挑选</h3>
+      <div class="note">Sorftime 反查的高价值新词。「采用」=纳入搜索素材;「忽略」=不要。每天自动补充(需 n8n 工作流)。</div>
+      <div class="controls" style="margin-bottom:12px" id="kw-ctl"></div>
+      <div id="kw-cands"></div>
+    </div>
   </section>
 
   <div class="foot">蕾丝锁死为入场前提 · 趋势看全景找可迁移元素 · 数据每次打开<b>实时重算</b>,会随积累自动变准</div>
@@ -412,6 +448,8 @@ let UNIQ=[];         // one row per product (latest scan)
 let ELEM=[];         // element aggregates
 let COMBOS=[];       // 蕾丝×非蕾丝 组合
 let PRODUCT_COMBOS={}; // pkey -> [combos]
+let KEYWORDS=[], CANDIDATES=[];      // 关键词库
+const kwState={status:"pending"};
 
 function platformOf(r){return (r.platform||"").toLowerCase();}
 function salesOf(r){ // 平台口径不同:Amazon 用月销;其余用 sold(累计)。返回 {val, kind}
@@ -844,6 +882,81 @@ function renderPick(){
   });
 }
 
+/* ---- PAGE 4 : keyword library ---- */
+function buildKwControls(){
+  const c=$("#kw-ctl");if(!c)return;c.innerHTML="";
+  const seg=el("div","seg");
+  [["pending","待选择"],["adopted","已采用"],["rejected","已忽略"],["all","全部"]].forEach(([k,l])=>{
+    const b=el("button",kwState.status===k?"on":"",l);
+    b.onclick=()=>{kwState.status=k;buildKwControls();renderCands();};seg.appendChild(b);
+  });
+  c.appendChild(seg);
+}
+function renderKwPool(){
+  const host=$("#kw-pool");if(!host)return;host.innerHTML="";
+  const sweep=KEYWORDS.filter(k=>k.active&&k.use_type==='sweep');
+  const cnt=$("#kw-pool-count");if(cnt)cnt.textContent=`(${sweep.length})`;
+  if(!sweep.length){host.innerHTML=`<div class="note" style="color:var(--muted)">词池为空,或 cfg_keywords 读不到。</div>`;return;}
+  const byLayer={};sweep.forEach(k=>{(byLayer[k.layer??0]=byLayer[k.layer??0]||[]).push(k);});
+  Object.keys(byLayer).sort().forEach(L=>{
+    host.appendChild(el("div","kwlayer",`Layer ${L} · ${byLayer[L].length} 词`));
+    const wrap=el("div");
+    byLayer[L].forEach(k=>wrap.appendChild(el("span","kwchip",esc(k.keyword))));
+    host.appendChild(wrap);
+  });
+}
+function renderCands(setupErr){
+  const host=$("#kw-cands");if(!host)return;host.innerHTML="";
+  if(setupErr){host.innerHTML=`<div class="state" style="padding:30px"><h3>候选表还没建</h3><div>先在 Supabase 跑「建表 + 播种」SQL,再刷新页面。</div></div>`;return;}
+  let data=CANDIDATES.slice();
+  if(kwState.status!=="all")data=data.filter(c=>(c.status||'pending')===kwState.status);
+  data.sort((a,b)=>(b.search_volume??0)-(a.search_volume??0));
+  if(!data.length){host.innerHTML=`<div class="note" style="color:var(--muted)">这个状态下暂无候选词。</div>`;return;}
+  data.forEach(c=>{
+    const row=el("div","candrow"), left=el("div"), st=c.status||'pending';
+    left.innerHTML=`<div class="kw">${esc(c.keyword)}</div>
+      <div class="meta">${c.seed?`<span>种子 ${esc(c.seed)}</span>`:""}
+      ${c.relevance!=null?`<span>相关 <b>${(c.relevance*100).toFixed(0)}</b></span>`:""}
+      ${c.product_hits!=null?`<span>款集中 <b>${c.product_hits}</b></span>`:""}
+      ${c.discovered_at?`<span>${fmtDate(c.discovered_at)} 发现</span>`:""}</div>`;
+    row.appendChild(left);
+    const vol=el("div","vol");vol.innerHTML=`${fmt(c.search_volume)}<small>周搜索</small>`;row.appendChild(vol);
+    const acts=el("div","acts");
+    if(st==='pending'){
+      const a=el("button","btn adopt","采用");a.onclick=()=>setCandidateStatus(c.id,'adopted');
+      const r=el("button","btn","忽略");r.onclick=()=>setCandidateStatus(c.id,'rejected');
+      acts.appendChild(a);acts.appendChild(r);
+    }else{
+      acts.appendChild(el("span","statusbadge "+st, st==='adopted'?'已采用':'已忽略'));
+      const u=el("button","btn","撤回");u.onclick=()=>setCandidateStatus(c.id,'pending');acts.appendChild(u);
+    }
+    row.appendChild(acts);host.appendChild(row);
+  });
+}
+function renderKw(setupErr){ renderKwPool(); buildKwControls(); renderCands(setupErr); }
+async function setCandidateStatus(id,status){
+  try{
+    const res=await fetch(`${SUPABASE_URL}/rest/v1/keyword_candidates?id=eq.${id}`,{method:"PATCH",
+      headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+SUPABASE_KEY,"Content-Type":"application/json",Prefer:"return=minimal"},
+      body:JSON.stringify({status,updated_at:new Date().toISOString()})});
+    if(!res.ok)throw new Error("HTTP "+res.status);
+    const c=CANDIDATES.find(x=>x.id===id);if(c)c.status=status;
+    renderCands();
+  }catch(e){ alert("更新失败(多半是没加 anon update 策略):"+e.message); }
+}
+async function loadKeywords(){
+  try{
+    const h={apikey:SUPABASE_KEY,Authorization:"Bearer "+SUPABASE_KEY};
+    const [kRes,cRes]=await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/cfg_keywords?select=keyword,layer,use_type,active&platform=eq.amazon`,{headers:h}),
+      fetch(`${SUPABASE_URL}/rest/v1/keyword_candidates?select=*`,{headers:h})
+    ]);
+    KEYWORDS=kRes.ok?await kRes.json():[];
+    if(cRes.ok){CANDIDATES=await cRes.json();renderKw(false);}
+    else {CANDIDATES=[];renderKw(true);}
+  }catch(e){renderKw(true);}
+}
+
 /* ---- shared empty/error ---- */
 function emptyHtml(){return `<div class="state"><h3>这里还没有数据</h3>
   <div>等雷达跑下一轮,或调整上方筛选。趋势信号(非蕾丝)也会出现在这里。</div></div>`;}
@@ -876,6 +989,7 @@ async function load(){
     buildRawControls();renderRaw();
     buildWeights();buildElemControls();renderElem();
     buildPickControls();renderPick();
+    loadKeywords();
   }catch(e){
     setStatus("读取失败",true);
     $("#raw-empty").innerHTML=errHtml(e.message);
