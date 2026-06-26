@@ -260,7 +260,7 @@ td.t-el{max-width:240px}
   <div class="foot">蕾丝锁死为入场前提 · 趋势看全景找可迁移元素 · 数据每次打开<b>实时重算</b>,会随积累自动变准</div>
 </main>
 
-<div id="zoom"><img alt=""></div>
+<div id="zoom"><img alt="" referrerpolicy="no-referrer"></div>
 
 <script>
 /* ============================================================
@@ -574,7 +574,7 @@ function bindZoom(img,src){
 }
 
 /* ---- PAGE 1 ---- */
-const rawState={platform:"all",lace:"all",sort:"month_sales",dir:"desc",sub:"all",recent:"all",minSales:0,q:""};
+const rawState={platform:"all",lace:"all",sort:"month_sales",dir:"desc",sub:"all",recent:"all",quality:"all",minSales:0,q:""};
 function buildRawControls(){
   const c=$("#raw-ctl"); c.innerHTML="";
   const plats=["all",...new Set(UNIQ.map(r=>r.platform))];
@@ -588,6 +588,7 @@ function buildRawControls(){
   c.appendChild(sel("蕾丝",[{v:"all",l:"全部"},{v:"lace",l:"蕾丝候选"},{v:"trend",l:"趋势信号"}],rawState.lace,v=>rawState.lace=v));
   c.appendChild(sel("细分类目",subs.map(s=>({v:s,l:s==="all"?"全部":s})),rawState.sub,v=>rawState.sub=v));
   c.appendChild(sel("上架",[{v:"all",l:"不限"},{v:"30",l:"近30天"},{v:"60",l:"近60天"},{v:"90",l:"近90天"}],rawState.recent,v=>rawState.recent=v));
+  c.appendChild(sel("数据",[{v:"all",l:"全部"},{v:"img",l:"有图"},{v:"sales",l:"有销量"},{v:"both",l:"有图+有销量"}],rawState.quality,v=>rawState.quality=v));
   // search
   const sw=el("div","ctl");sw.appendChild(el("label",null,"搜索标题"));
   const inp=el("input");inp.type="search";inp.placeholder="lace, eyelet, puff…";inp.value=rawState.q;
@@ -602,6 +603,9 @@ function rawFiltered(){
   if(rawState.lace==="trend")r=r.filter(x=>!x._lace);
   if(rawState.sub!=="all")r=r.filter(x=>x.subcat===rawState.sub);
   if(rawState.recent!=="all"){const d=+rawState.recent;r=r.filter(x=>{const dd=daysSince(x.listing_date);return dd!=null&&dd<=d;});}
+  if(rawState.quality==="img")r=r.filter(x=>x.image);
+  else if(rawState.quality==="sales")r=r.filter(x=>salesOf(x).val!=null);
+  else if(rawState.quality==="both")r=r.filter(x=>x.image&&salesOf(x).val!=null);
   if(rawState.q)r=r.filter(x=>x.title.toLowerCase().includes(rawState.q));
   const key=rawState.sort, dir=rawState.dir==="desc"?-1:1;
   const val=x=>{ if(key==="month_sales")return salesOf(x).val??-1; if(key==="scan_ts"||key==="listing_date")return new Date(x[key]||0).getTime(); return x[key]??-1;};
@@ -644,7 +648,7 @@ function renderRaw(){
     const s=salesOf(r), tr=el("tr");
     // image
     const tdImg=el("td");
-    const img=el("img","thumb-s");img.loading="lazy";img.src=r.image||"";img.alt="";
+    const img=el("img","thumb-s");img.loading="lazy";img.referrerPolicy="no-referrer";img.src=r.image||"";img.alt="";
     img.onerror=()=>{img.style.visibility="hidden";};
     if(r.image)bindZoom(img,r.image);
     tdImg.appendChild(img); tr.appendChild(tdImg);
@@ -710,7 +714,7 @@ function buildElemControls(){
 function miniProd(r){
   const s=salesOf(r);
   const m=el("div","mini");
-  const img=el("img");img.loading="lazy";img.src=r.image||"";img.onerror=()=>{img.style.visibility="hidden";};
+  const img=el("img");img.loading="lazy";img.referrerPolicy="no-referrer";img.src=r.image||"";img.onerror=()=>{img.style.visibility="hidden";};
   if(r.image)bindZoom(img,r.image);
   m.appendChild(img);
   const mt=el("div","mt");
@@ -814,7 +818,7 @@ function renderPick(){
   if(!data.length){list.innerHTML=emptyHtml();return;}
   data.slice(0,40).forEach((r,i)=>{
     const p=el("div","pick"), ph=el("div","ph");
-    const img=el("img");img.loading="lazy";img.src=r.image||"";img.onerror=()=>{img.style.display="none";};
+    const img=el("img");img.loading="lazy";img.referrerPolicy="no-referrer";img.src=r.image||"";img.onerror=()=>{img.style.display="none";};
     if(r.image)bindZoom(img,r.image);
     ph.appendChild(img);ph.appendChild(el("div","rank",i+1));p.appendChild(ph);
     const info=el("div","info");
