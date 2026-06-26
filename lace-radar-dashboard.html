@@ -394,6 +394,15 @@ function relTime(d){const dd=daysSince(d);if(dd==null)return "—";if(dd===0)ret
 function cleanCat(s){if(!s)return "";return String(s).replace(/（排名[:：]?\s*(\d+)）/,(m,n)=>" #"+n).replace(/\(rank[:：]?\s*(\d+)\)/i," #$1").trim();}
 function fmtDate(d){if(!d)return "—";const t=new Date(d);if(isNaN(t))return "—";const p=n=>String(n).padStart(2,"0");return t.getFullYear()+"-"+p(t.getMonth()+1)+"-"+p(t.getDate());}
 function dedupeLatest(rows){const m=new Map();rows.forEach(r=>{const ex=m.get(r.pkey);if(!ex||new Date(r.scan_ts)>new Date(ex.scan_ts))m.set(r.pkey,r);});return [...m.values()];}
+// SHEIN 图床(ltwebstatic)防盗链/限流 → 走公共图片代理绕过;其余平台原样
+function proxyImg(u){
+  if(!u) return u;
+  if(/ltwebstatic\.com/i.test(u) && u.indexOf("weserv")<0){
+    const noScheme=u.replace(/^https?:\/\//i,"");
+    return "https://images.weserv.nl/?url=ssl:"+noScheme+"&output=webp&w=600";
+  }
+  return u;
+}
 
 /* ============================================================
    数据层
@@ -564,7 +573,7 @@ let elemBy=Object.fromEntries(FLAT.map(f=>[f.key,null])); // key->aggregate
 /* ---- hover zoom ---- */
 const zoom=$("#zoom"), zimg=zoom.querySelector("img");
 function bindZoom(img,src){
-  img.addEventListener("mouseenter",()=>{zimg.src=src;zoom.style.display="block";});
+  img.addEventListener("mouseenter",()=>{zimg.src=proxyImg(src);zoom.style.display="block";});
   img.addEventListener("mousemove",e=>{
     const pad=18,w=340,h=340; let x=e.clientX+pad,y=e.clientY+pad;
     if(x+w>innerWidth)x=e.clientX-w-pad; if(y+h>innerHeight)y=e.clientY-h-pad;
@@ -648,7 +657,7 @@ function renderRaw(){
     const s=salesOf(r), tr=el("tr");
     // image
     const tdImg=el("td");
-    const img=el("img","thumb-s");img.loading="lazy";img.referrerPolicy="no-referrer";img.src=r.image||"";img.alt="";
+    const img=el("img","thumb-s");img.loading="lazy";img.referrerPolicy="no-referrer";img.src=proxyImg(r.image)||"";img.alt="";
     img.onerror=()=>{img.style.visibility="hidden";};
     if(r.image)bindZoom(img,r.image);
     tdImg.appendChild(img); tr.appendChild(tdImg);
@@ -714,7 +723,7 @@ function buildElemControls(){
 function miniProd(r){
   const s=salesOf(r);
   const m=el("div","mini");
-  const img=el("img");img.loading="lazy";img.referrerPolicy="no-referrer";img.src=r.image||"";img.onerror=()=>{img.style.visibility="hidden";};
+  const img=el("img");img.loading="lazy";img.referrerPolicy="no-referrer";img.src=proxyImg(r.image)||"";img.onerror=()=>{img.style.visibility="hidden";};
   if(r.image)bindZoom(img,r.image);
   m.appendChild(img);
   const mt=el("div","mt");
@@ -818,7 +827,7 @@ function renderPick(){
   if(!data.length){list.innerHTML=emptyHtml();return;}
   data.slice(0,40).forEach((r,i)=>{
     const p=el("div","pick"), ph=el("div","ph");
-    const img=el("img");img.loading="lazy";img.referrerPolicy="no-referrer";img.src=r.image||"";img.onerror=()=>{img.style.display="none";};
+    const img=el("img");img.loading="lazy";img.referrerPolicy="no-referrer";img.src=proxyImg(r.image)||"";img.onerror=()=>{img.style.display="none";};
     if(r.image)bindZoom(img,r.image);
     ph.appendChild(img);ph.appendChild(el("div","rank",i+1));p.appendChild(ph);
     const info=el("div","info");
