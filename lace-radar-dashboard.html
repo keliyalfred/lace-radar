@@ -392,15 +392,18 @@ const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 function daysSince(d){if(!d)return null;const t=new Date(d).getTime();if(isNaN(t))return null;return Math.max(0,Math.round((Date.now()-t)/864e5));}
 function relTime(d){const dd=daysSince(d);if(dd==null)return "—";if(dd===0)return "今天";if(dd===1)return "昨天";if(dd<30)return dd+"天前";if(dd<60)return "约1月前";return Math.round(dd/30)+"月前";}
 function cleanCat(s){if(!s)return "";return String(s).replace(/（排名[:：]?\s*(\d+)）/,(m,n)=>" #"+n).replace(/\(rank[:：]?\s*(\d+)\)/i," #$1").trim();}
+function fmtDate(d){if(!d)return "—";const t=new Date(d);if(isNaN(t))return "—";const p=n=>String(n).padStart(2,"0");return t.getFullYear()+"-"+p(t.getMonth()+1)+"-"+p(t.getDate());}
+function dedupeLatest(rows){const m=new Map();rows.forEach(r=>{const ex=m.get(r.pkey);if(!ex||new Date(r.scan_ts)>new Date(ex.scan_ts))m.set(r.pkey,r);});return [...m.values()];}
 
 /* ============================================================
    数据层
    ============================================================ */
 let RAW=[];          // normalized rows
-let TAGGED=[];       // rows with .elements
+let TAGGED=[];       // rows with .elements (all scans)
+let UNIQ=[];         // one row per product (latest scan)
 let ELEM=[];         // element aggregates
 let COMBOS=[];       // 蕾丝×非蕾丝 组合
-let PRODUCT_COMBOS={}; // product_id -> [combos]
+let PRODUCT_COMBOS={}; // pkey -> [combos]
 
 function platformOf(r){return (r.platform||"").toLowerCase();}
 function salesOf(r){ // 平台口径不同:Amazon 用月销;其余用 sold(累计)。返回 {val, kind}
@@ -408,12 +411,16 @@ function salesOf(r){ // 平台口径不同:Amazon 用月销;其余用 sold(累�
   if(r.sold!=null) return {val:+r.sold, kind:"累计"};
   return {val:null, kind:""};
 }
+function normTitle(t){return (t||"").toLowerCase().replace(/^item\s+picture\s+/,"").replace(/\s+/g," ").trim();}
 function normalize(rows){
   return rows.map(r=>{
     const ex=r.extra||{};
+    const title=(r.title||"").replace(/^item\s+picture\s+/i,"").trim();
+    const platform=r.platform||"?";
     return {
-      id:r.product_id, platform:r.platform||"?", source:r.source||"", scan_ts:r.scan_ts,
-      title:r.title||"", price:r.price, currency:r.currency||"", image:r.image_url||"",
+      id:r.product_id, platform, source:r.source||"", scan_ts:r.scan_ts,
+      title, pkey:platform+"|"+normTitle(title).slice(0,80),
+      price:r.price, currency:r.currency||"", image:r.image_url||"",
       url:r.url||"", reviews:r.reviews, rating:r.rating,
       month_sales:r.month_sales, sold:r.sold, sold_banded:r.sold_banded,
       potential:ex.potential_index, revenue:ex.month_revenue,
@@ -448,7 +455,7 @@ function computeSalesWeights(rows){
 /* —— 增速:同 id 跨 scan_ts 的销量变化(数据够才有) —— */
 function computeGrowth(rows){
   const byId={};
-  rows.forEach(r=>{(byId[r.id]=byId[r.id]||[]).push(r);});
+  rows.forEach(r=>{(byId[r.pkey]=byId[r.pkey]||[]).push(r);});
   for(const id in byId){
     const hist=byId[id].filter(r=>r.scan_ts).sort((a,b)=>new Date(a.scan_ts)-new Date(b.scan_ts));
     if(hist.length>=2){
@@ -467,7 +474,7 @@ function buildElements(rows){
     r.elements.forEach(e=>{
       const m=map[e.key]||(map[e.key]={key:e.key,axis:e.axis,label:e.label,
         n:0,prods:new Set(),plats:new Set(),salesW:0,recW:0,growthArr:[]});
-      m.n++; m.prods.add(r.id); m.plats.add(r.platform);
+      m.n++; m.prods.add(r.pkey); m.plats.add(r.platform);
       m.salesW+=sw; m.recW+=rw; if(gw!=null)m.growthArr.push(gw);
     });
   });
@@ -507,7 +514,7 @@ function buildCombos(rows){
       if(laceB){const t=a;a=b;b=t;}          // a=蕾丝, b=非蕾丝
       const id=a+"|"+b;
       const p=pair[id]||(pair[id]={a,b,prods:new Map()});
-      if(!p.prods.has(r.id)) p.prods.set(r.id,r);   // 同款去重
+      if(!p.prods.has(r.pkey)) p.prods.set(r.pkey,r);   // 同款去重
     }
   });
   const combos=Object.values(pair).map(p=>{
@@ -525,7 +532,7 @@ function buildCombos(rows){
   }).filter(c=>c.n>=2);
   // 反查:每款属于哪些组合
   PRODUCT_COMBOS={};
-  combos.forEach(c=>c.prods.forEach(r=>{(PRODUCT_COMBOS[r.id]=PRODUCT_COMBOS[r.id]||[]).push(c);}));
+  combos.forEach(c=>c.prods.forEach(r=>{(PRODUCT_COMBOS[r.pkey]=PRODUCT_COMBOS[r.pkey]||[]).push(c);}));
   return combos;
 }
 
@@ -570,8 +577,8 @@ function bindZoom(img,src){
 const rawState={platform:"all",lace:"all",sort:"month_sales",dir:"desc",sub:"all",recent:"all",minSales:0,q:""};
 function buildRawControls(){
   const c=$("#raw-ctl"); c.innerHTML="";
-  const plats=["all",...new Set(TAGGED.map(r=>r.platform))];
-  const subs=["all",...new Set(TAGGED.map(r=>r.subcat).filter(Boolean))].slice(0,40);
+  const plats=["all",...new Set(UNIQ.map(r=>r.platform))];
+  const subs=["all",...new Set(UNIQ.map(r=>r.subcat).filter(Boolean))].slice(0,40);
   const sel=(lab,opts,val,on)=>{
     const w=el("div","ctl");w.appendChild(el("label",null,lab));
     const s=el("select");opts.forEach(o=>{const op=el("option",null,esc(o.l??o));op.value=o.v??o;if((o.v??o)===val)op.selected=true;s.appendChild(op);});
@@ -589,7 +596,7 @@ function buildRawControls(){
   const cnt=el("div","count");cnt.id="raw-count";c.appendChild(cnt);
 }
 function rawFiltered(){
-  let r=TAGGED.slice();
+  let r=UNIQ.slice();
   if(rawState.platform!=="all")r=r.filter(x=>x.platform===rawState.platform);
   if(rawState.lace==="lace")r=r.filter(x=>x._lace);
   if(rawState.lace==="trend")r=r.filter(x=>!x._lace);
@@ -669,7 +676,7 @@ function renderRaw(){
     else tdEl.innerHTML='<span class="subcell">—</span>';
     tr.appendChild(tdEl);
     // scan
-    tr.appendChild(el("td",null,`<span class="subcell">${relTime(r.scan_ts)}</span>`));
+    tr.appendChild(el("td",null,`<span class="subcell">${fmtDate(r.scan_ts)}</span><div class="subcell" style="opacity:.65">${relTime(r.scan_ts)}</div>`));
     tbody.appendChild(tr);
   });
   tb.appendChild(tbody); wrap.appendChild(tb); host.appendChild(wrap);
@@ -778,12 +785,12 @@ function productScore(r){
   const g=growthW(r)*W.growth;
   const rec=recencyW(r)*W.recency;
   const sales=(r._salesW??0)*W.sales;
-  let comboB=0;(PRODUCT_COMBOS[r.id]||[]).forEach(c=>comboB+=comboScore(c));
+  let comboB=0;(PRODUCT_COMBOS[r.pkey]||[]).forEach(c=>comboB+=comboScore(c));
   comboB=Math.min(W.combo*1.5, comboB*0.05);
   return {score:g+rec+sales+comboB, g,rec,sales,comboB};
 }
 function reasonFor(r){
-  const myC=(PRODUCT_COMBOS[r.id]||[]).slice().sort((a,b)=>comboScore(b)-comboScore(a)).slice(0,2);
+  const myC=(PRODUCT_COMBOS[r.pkey]||[]).slice().sort((a,b)=>comboScore(b)-comboScore(a)).slice(0,2);
   const comboTxt=myC.map(c=>`<span class="el">${esc(c.a)} × ${esc(c.b)}</span>`).join("、");
   const s=salesOf(r); let parts=[];
   if(comboTxt)parts.push(`命中热组合 ${comboTxt}`);
@@ -795,14 +802,13 @@ function reasonFor(r){
   return parts.join(" · ");
 }
 function renderPick(){
-  let data=TAGGED.filter(r=>r.elements.length);
+  let data=UNIQ.filter(r=>r.elements.length);
   if(pickState.lace==="lace")data=data.filter(r=>r._lace);
   data.forEach(r=>r._sc=productScore(r));
   if(pickState.sort==="sales")data.sort((a,b)=>(salesOf(b).val??-1)-(salesOf(a).val??-1));
   else if(pickState.sort==="recent")data.sort((a,b)=>(daysSince(a.listing_date)??1e9)-(daysSince(b.listing_date)??1e9));
   else if(pickState.sort==="growth")data.sort((a,b)=>(b._growth??-1)-(a._growth??-1));
   else data.sort((a,b)=>b._sc.score-a._sc.score);
-  const seen=new Set();data=data.filter(r=>{if(seen.has(r.id))return false;seen.add(r.id);return true;});
   $("#pick-count")&&($("#pick-count").innerHTML=`<b>${data.length}</b> 款`);
   const list=$("#pick-list");list.innerHTML="";
   if(!data.length){list.innerHTML=emptyHtml();return;}
@@ -844,14 +850,15 @@ async function load(){
     const rows=await res.json();
     RAW=normalize(rows);
     TAGGED=RAW.map(r=>{r.elements=tag(r);r._lace=isLace(r);return r;});
-    computeSalesWeights(TAGGED);
-    computeGrowth(TAGGED);
-    ELEM=buildElements(TAGGED);
+    computeGrowth(TAGGED);               // 需全部扫描记录算增速
+    UNIQ=dedupeLatest(TAGGED);           // 一款一行(取最新一次抓取)
+    computeSalesWeights(UNIQ);
+    ELEM=buildElements(UNIQ);
     elemBy=Object.fromEntries(ELEM.map(e=>[e.key,e]));
-    COMBOS=buildCombos(TAGGED);
-    const plats=[...new Set(TAGGED.map(r=>r.platform))];
+    COMBOS=buildCombos(UNIQ);
+    const plats=[...new Set(UNIQ.map(r=>r.platform))];
     const lastScan=RAW[0]?.scan_ts;
-    setStatus(`<b>${RAW.length}</b> 行 · ${plats.length} 平台 · 最近抓取 ${relTime(lastScan)}`);
+    setStatus(`<b>${UNIQ.length}</b> 款 · ${RAW.length} 行 · ${plats.length} 平台 · 最近 ${fmtDate(lastScan)}`);
     // render all
     buildRawControls();renderRaw();
     buildWeights();buildElemControls();renderElem();
