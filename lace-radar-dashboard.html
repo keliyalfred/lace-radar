@@ -186,6 +186,23 @@ td.t-el{max-width:240px}
 .kwadd-actions{display:flex;align-items:center;gap:14px;margin-top:8px;flex-wrap:wrap}
 .kwchk{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);cursor:pointer}
 .kwchk input{accent-color:var(--mauve)}
+/* potency tab */
+table.pot{width:100%;border-collapse:separate;border-spacing:0;font-size:11.5px;min-width:720px}
+table.pot thead th{position:sticky;top:0;z-index:5;background:var(--panel);color:var(--muted);font-size:10px;letter-spacing:.06em;text-transform:uppercase;text-align:left;padding:10px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.pot thead th.num{text-align:right}
+table.pot td{padding:8px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+table.pot tbody tr:hover{background:var(--line-soft)}
+td.pnum{text-align:right;font-variant-numeric:tabular-nums}
+.potency-b{font-family:Fraunces;font-size:15px;color:var(--mauve)}
+.adjinp{width:54px;font:inherit;font-size:11px;border:1px solid var(--line);border-radius:6px;padding:3px 5px;background:var(--paper);color:var(--ink);text-align:center}
+.win{font-size:10px;padding:2px 9px;border-radius:99px;white-space:nowrap}
+.win.green{background:var(--teal-soft);color:var(--teal)}
+.win.teal{background:#E6F0EF;color:var(--teal)}
+.win.orange{background:#F5E9DE;color:var(--warn)}
+.win.red{background:#F6E5E0;color:#B5402F}
+.win.muted{background:var(--line-soft);color:var(--muted)}
+.yoy-pos{color:var(--teal);font-weight:600}
+.yoy-neg{color:var(--warn);font-weight:600}
 
 /* ---------- PAGE 3 : selection ---------- */
 .pick{display:grid;grid-template-columns:120px 1fr;gap:14px;background:var(--panel);border:1px solid var(--line);
@@ -225,6 +242,7 @@ td.t-el{max-width:240px}
       <button data-pg="elem"><span class="n">02</span>元素排列组合</button>
       <button data-pg="pick"><span class="n">03</span>选品输出</button>
       <button data-pg="kw"><span class="n">04</span>关键词库</button>
+      <button data-pg="pot"><span class="n">05</span>元素势能榜</button>
     </nav>
     <div class="status" id="status"><span class="dot"></span>连接中…</div>
   </div>
@@ -313,6 +331,18 @@ td.t-el{max-width:240px}
       <div class="controls" style="margin-bottom:12px" id="kw-ctl"></div>
       <div id="kw-cands"></div>
     </div>
+  </section>
+
+  <!-- ============ PAGE 5 ============ -->
+  <section class="page" id="pg-pot">
+    <div class="phead"><h2>元素势能榜</h2>
+      <div class="lead">预判层成品:搜索需求(YoY)× TikTok电商份额 × 蕾丝适配度,叠零售铺货度判断窗口。势能高 + 没铺满 = 黄金窗口。</div></div>
+    <div class="legend">
+      <b>窗口</b>:🟢 黄金窗口 = 搜索在涨 + 零售还没铺满(赶紧融进蕾丝) · 🟡 起量中 · 🟠 偏红海 · 🔴 退潮。<br>
+      <b>适配度</b> = 客观基础分 × 你的手动加权(可改,默认 1.0)。<b>势能</b> = 搜索增速 × 适配度 × 供给开放度。
+    </div>
+    <div class="controls" id="pot-ctl" style="margin-bottom:14px"></div>
+    <div id="pot-list"></div>
   </section>
 
   <div class="foot">蕾丝锁死为入场前提 · 趋势看全景找可迁移元素 · 数据每次打开<b>实时重算</b>,会随积累自动变准</div>
@@ -439,6 +469,7 @@ const VOCAB = {
 const AXIS_LABEL = Object.fromEntries(Object.entries(VOCAB).map(([k,v])=>[k,v.label]));
 const FLAT = [];
 for(const ax in VOCAB) for(const it of VOCAB[ax].items) FLAT.push({axis:ax, key:it.key, label:it.label, pat:it.pat});
+const AX_OF = Object.fromEntries(FLAT.map(f=>[f.key, f.axis]));
 
 /* ============================================================
    工具
@@ -472,6 +503,8 @@ let COMBOS=[];       // 蕾丝×非蕾丝 组合
 let PRODUCT_COMBOS={}; // pkey -> [combos]
 let KEYWORDS=[], CANDIDATES=[];      // 关键词库
 const kwState={status:"pending"};
+let SIGNALS={}, FIT={};              // 预判层:元素信号 + 适配度
+const potState={sort:"potency"};
 
 function platformOf(r){return (r.platform||"").toLowerCase();}
 function salesOf(r){ // 平台口径不同:Amazon 用月销;其余用 sold(累计)。返回 {val, kind}
@@ -1017,6 +1050,96 @@ async function loadKeywords(){
   }catch(e){renderKw(true);}
 }
 
+/* ---- PAGE 5 : element potency (prediction layer) ---- */
+const BASE_FIT={
+  lace:1.0,eyelet:1.0,crochet:1.0,broderie:1.0,pointelle:1.0,cutwork:1.0,scallop:1.0,embroidered:1.0,
+  puff:0.9,flutter:0.9,bishop:0.9,cap:0.9,bell:0.9,square:0.9,sweetheart:0.9,offshoulder:0.9,halter:0.9,vneck:0.9,boat:0.9,
+  babydoll:0.9,peplum:0.9,tiered:0.9,smocked:0.9,ruffle:0.9,bow:0.9,pleated:0.9,laceup:0.9,pearl:0.9,
+  coquette:0.9,cottagecore:0.9,romantic:0.9,milkmaid:0.9,fairy:0.9,vintage:0.9,boho:0.9,floral:0.9,polkadot:0.9,pastel:0.9,gingham:0.9,
+  wrap:0.55,aline:0.55,tunic:0.55,cropped:0.55,collared:0.55,highneck:0.55,button:0.55,striped:0.55,resort:0.55,cutout:0.55,y2k:0.55,
+  oversized:0.2,western:0.2
+};
+function baseFit(el){ return BASE_FIT[el]!=null?BASE_FIT[el]:0.55; }
+function buildPotControls(){
+  const c=$("#pot-ctl");if(!c)return;c.innerHTML="";
+  const seg=el("div","seg");
+  [["potency","按势能"],["yoy","按搜索YoY"],["share","按TikTok份额"]].forEach(([k,l])=>{
+    const b=el("button",potState.sort===k?"on":"",l);b.onclick=()=>{potState.sort=k;buildPotControls();renderPotency();};seg.appendChild(b);
+  });
+  c.appendChild(seg);
+}
+function renderPotency(){
+  const host=$("#pot-list");if(!host)return;
+  const maxRetail=Math.max(1,...ELEM.map(e=>e.products));
+  const retailBy=Object.fromEntries(ELEM.map(e=>[e.key,e.products]));
+  const els=new Set([...Object.keys(SIGNALS),...ELEM.map(e=>e.key)]);
+  let rows=[];
+  els.forEach(el0=>{
+    const sig=SIGNALS[el0]||{}; const yoy=sig.searchYoY; const share=sig.tiktokShare;
+    const retail=retailBy[el0]||0;
+    const adj=(FIT[el0]&&FIT[el0].adj!=null)?FIT[el0].adj:1.0;
+    const base=baseFit(el0); const fit=base*adj;
+    const yoyN=yoy!=null?Math.max(0,Math.min(1.2,yoy/1.5)):0;
+    const retailSat=Math.min(1,retail/maxRetail); const openness=1-retailSat;
+    const potency=yoyN*fit*(0.6+0.4*openness);
+    let win; if(yoy==null)win={t:'—',c:'muted'};else if(yoy<=0)win={t:'退潮',c:'red'};else if(retailSat<0.33)win={t:'黄金窗口',c:'green'};else if(retailSat<0.66)win={t:'起量中',c:'teal'};else win={t:'偏红海',c:'orange'};
+    rows.push({el:el0,axisKey:AX_OF[el0]||'',axis:AXIS_LABEL[AX_OF[el0]]||'',yoy,share,retail,base,adj,fit,potency,win});
+  });
+  rows=rows.filter(r=>r.yoy!=null||r.retail>0||r.share!=null);
+  const key=potState.sort;
+  rows.sort((a,b)=> key==='yoy'?((b.yoy??-9)-(a.yoy??-9)):key==='share'?((b.share??-1)-(a.share??-1)):(b.potency-a.potency));
+  host.innerHTML="";
+  if(!rows.length){host.innerHTML=`<div class="state"><h3>还没有信号数据</h3><div>先在 n8n 跑「搜索势能」「TikTok电商势能」工作流,或等零售元素积累。</div></div>`;return;}
+  const wrap=el("div","tablewrap"),tb=el("table","pot");
+  tb.innerHTML=`<thead><tr><th>元素</th><th>轴</th><th class="num">搜索YoY</th><th class="num">TikTok份额</th><th class="num">零售铺货</th><th class="num">适配度</th><th>加权</th><th class="num">势能</th><th>窗口</th></tr></thead>`;
+  const tbody=el("tbody");
+  rows.forEach(r=>{
+    const tr=el("tr");
+    tr.innerHTML=`<td><b>${esc(r.el)}</b></td><td class="subcell">${esc(r.axis)}</td>
+      <td class="pnum ${r.yoy!=null?(r.yoy>0?'yoy-pos':'yoy-neg'):''}">${r.yoy!=null?(r.yoy*100).toFixed(0)+'%':'—'}</td>
+      <td class="pnum">${r.share!=null?(r.share*100).toFixed(2)+'%':'—'}</td>
+      <td class="pnum">${r.retail||'—'}</td>
+      <td class="pnum">${r.fit.toFixed(2)}<div class="subcell">base ${r.base}</div></td>
+      <td></td>
+      <td class="pnum"><span class="potency-b">${(r.potency*100).toFixed(0)}</span></td>
+      <td><span class="win ${r.win.c}">${r.win.t}</span></td>`;
+    const inp=el("input","adjinp");inp.type="number";inp.step="0.1";inp.min="0";inp.max="2";inp.value=r.adj;
+    inp.onchange=()=>{let v=parseFloat(inp.value);if(!isFinite(v))v=1.0;setFit(r.el,r.base,r.axisKey,v);};
+    tr.children[6].appendChild(inp);
+    tbody.appendChild(tr);
+  });
+  tb.appendChild(tbody);wrap.appendChild(tb);host.appendChild(wrap);
+}
+async function setFit(el0,base,axisKey,adj){
+  try{
+    const res=await fetch(`${SUPABASE_URL}/rest/v1/element_fit`,{method:"POST",
+      headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+SUPABASE_KEY,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=minimal"},
+      body:JSON.stringify({element:el0,axis:axisKey,base_score:base,manual_adj:adj,updated_at:new Date().toISOString()})});
+    if(!res.ok)throw new Error("HTTP "+res.status);
+    FIT[el0]={base,adj};renderPotency();
+  }catch(e){ alert("保存失败(多半是没加 element_fit 写入策略):"+e.message); }
+}
+async function loadPotency(){
+  try{
+    const h={apikey:SUPABASE_KEY,Authorization:"Bearer "+SUPABASE_KEY};
+    const [sRes,fRes]=await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/element_signals?select=element,source,metric_type,value,period`,{headers:h}),
+      fetch(`${SUPABASE_URL}/rest/v1/element_fit?select=element,base_score,manual_adj`,{headers:h})
+    ]);
+    SIGNALS={};
+    if(sRes.ok){
+      const latest={};
+      (await sRes.json()).forEach(r=>{const k=r.element+'|'+r.source;if(!latest[k]||(r.period||'')>latest[k].period)latest[k]=r;});
+      Object.values(latest).forEach(r=>{const o=SIGNALS[r.element]||(SIGNALS[r.element]={});
+        if(r.source==='amazon_search'&&r.metric_type==='yoy_growth')o.searchYoY=+r.value;
+        if(r.source==='tiktok_shop'&&r.metric_type==='sales_share')o.tiktokShare=+r.value;});
+    }
+    FIT={};
+    if(fRes.ok){(await fRes.json()).forEach(r=>{FIT[r.element]={base:+r.base_score,adj:+r.manual_adj};});}
+    buildPotControls();renderPotency();
+  }catch(e){ buildPotControls();renderPotency(); }
+}
+
 /* ---- shared empty/error ---- */
 function emptyHtml(){return `<div class="state"><h3>这里还没有数据</h3>
   <div>等雷达跑下一轮,或调整上方筛选。趋势信号(非蕾丝)也会出现在这里。</div></div>`;}
@@ -1050,6 +1173,7 @@ async function load(){
     buildWeights();buildElemControls();renderElem();
     buildPickControls();renderPick();
     loadKeywords();
+    loadPotency();
   }catch(e){
     setStatus("读取失败",true);
     $("#raw-empty").innerHTML=errHtml(e.message);
