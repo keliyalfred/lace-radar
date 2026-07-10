@@ -1086,15 +1086,26 @@ function renderPotency(){
     rows.push({el:el0,axisKey:AX_OF[el0]||'',axis:AXIS_LABEL[AX_OF[el0]]||'',yoy,share,retail,base,adj,fit,potency,win});
   });
   rows=rows.filter(r=>r.yoy!=null||r.retail>0||r.share!=null);
+  rows.forEach(r=>{ r.hasSignal = (r.yoy!=null || r.share!=null); });
   const key=potState.sort;
-  rows.sort((a,b)=> key==='yoy'?((b.yoy??-9)-(a.yoy??-9)):key==='share'?((b.share??-1)-(a.share??-1)):(b.potency-a.potency));
+  const cmp=(a,b)=> key==='yoy'?((b.yoy??-9)-(a.yoy??-9)):key==='share'?((b.share??-1)-(a.share??-1)):(b.potency-a.potency);
+  // 有信号的(搜索/TikTok)永远排在无信号(纯零售)之上
+  rows.sort((a,b)=> (b.hasSignal-a.hasSignal) || cmp(a,b));
   host.innerHTML="";
   if(!rows.length){host.innerHTML=`<div class="state"><h3>还没有信号数据</h3><div>先在 n8n 跑「搜索势能」「TikTok电商势能」工作流,或等零售元素积累。</div></div>`;return;}
   const wrap=el("div","tablewrap"),tb=el("table","pot");
   tb.innerHTML=`<thead><tr><th>元素</th><th>轴</th><th class="num">搜索YoY</th><th class="num">TikTok份额</th><th class="num">零售铺货</th><th class="num">适配度</th><th>加权</th><th class="num">势能</th><th>窗口</th></tr></thead>`;
   const tbody=el("tbody");
+  let dividerShown=false;
   rows.forEach(r=>{
+    if(!r.hasSignal && !dividerShown){
+      dividerShown=true;
+      const dtr=el("tr");
+      dtr.innerHTML=`<td colspan="9" style="padding:9px 10px;background:var(--line-soft);color:var(--muted);font-size:10.5px;letter-spacing:.04em">↓ 以下仅有零售数据、暂无搜索/TikTok 信号(等关键词池 & TikTok 覆盖扩大后自动补上)</td>`;
+      tbody.appendChild(dtr);
+    }
     const tr=el("tr");
+    if(!r.hasSignal) tr.style.opacity=".55";
     tr.innerHTML=`<td><b>${esc(r.el)}</b></td><td class="subcell">${esc(r.axis)}</td>
       <td class="pnum ${r.yoy!=null?(r.yoy>0?'yoy-pos':'yoy-neg'):''}">${r.yoy!=null?(r.yoy*100).toFixed(0)+'%':'—'}</td>
       <td class="pnum">${r.share!=null?(r.share*100).toFixed(2)+'%':'—'}</td>
