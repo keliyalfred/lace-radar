@@ -1161,13 +1161,33 @@ function errHtml(msg){return `<div class="state"><h3>读不到数据</h3>
    启动
    ============================================================ */
 function setStatus(html,err){$("#status").innerHTML=`<span class="dot${err?" err":""}"></span>`+html;}
+
+/* 分页拉取:绕开 PostgREST 服务端 1000 行上限(客户端写 limit=3000 是无效的) */
+async function fetchAllRows(table,query){
+  const PAGE=1000, rows=[];
+  for(let from=0; from<200000; from+=PAGE){
+    const res=await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`,{
+      headers:{
+        apikey:SUPABASE_KEY,
+        Authorization:"Bearer "+SUPABASE_KEY,
+        "Range-Unit":"items",
+        Range:`${from}-${from+PAGE-1}`
+      }
+    });
+    if(!res.ok){const t=await res.text();throw new Error("HTTP "+res.status+" "+t.slice(0,120));}
+    const chunk=await res.json();
+    rows.push(...chunk);
+    if(chunk.length<PAGE) break;
+    setStatus(`加载中… 已取 ${rows.length} 行`);
+  }
+  return rows;
+}
+
 async function load(){
   setStatus("连接中…");
   try{
-    const url=`${SUPABASE_URL}/rest/v1/${TABLE}?select=*&order=scan_ts.desc&limit=3000`;
-    const res=await fetch(url,{headers:{apikey:SUPABASE_KEY,Authorization:"Bearer "+SUPABASE_KEY}});
-    if(!res.ok){const t=await res.text();throw new Error("HTTP "+res.status+" "+t.slice(0,120));}
-    const rows=await res.json();
+    // 排序必须带唯一键 id.desc 兜底,否则翻页时同 scan_ts 的行会重复或漏掉
+    const rows=await fetchAllRows(TABLE,"select=*&order=scan_ts.desc,id.desc");
     RAW=normalize(rows);
     TAGGED=RAW.map(r=>{r.elements=tag(r);r._lace=isLace(r);return r;});
     computeGrowth(TAGGED);               // 需全部扫描记录算增速
