@@ -230,6 +230,10 @@ td.pnum{text-align:right;font-variant-numeric:tabular-nums}
 .foot{font-size:10.5px;color:var(--muted);text-align:center;padding:24px 0 10px}
 .foot b{color:var(--mauve)}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  .platbox{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .platchk{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer}
+  .platchk input{margin:0;cursor:pointer}
+  .scopenote{font-size:10.5px;color:var(--muted);margin-top:6px;width:100%}
 </style>
 </head>
 <body>
@@ -506,12 +510,35 @@ const kwState={status:"pending"};
 let SIGNALS={}, FIT={};              // 预判层:元素信号 + 适配度
 const potState={sort:"potency"};
 
+/* ============================================================
+   打分白名单 —— 第①页永远显示全部平台;第②③⑤页只用勾选的平台。
+   新平台(walmart / tiktok / Sorftime 采的 temu)先入库观察,
+   数据验证够了再勾进来。第⑤页顶部可实时勾选,方便新旧口径并排对比。
+   ============================================================ */
+const DEFAULT_SCORING=["amazon","aliexpress","shein","temu"];
+let SCORING=new Set(DEFAULT_SCORING);
+function scoredRows(){ return UNIQ.filter(r=>SCORING.has(r.platform)); }
+function rebuildScoring(){
+  const sub=scoredRows();
+  ELEM=buildElements(sub);
+  elemBy=Object.fromEntries(ELEM.map(e=>[e.key,e]));
+  COMBOS=buildCombos(sub);
+}
+
 function platformOf(r){return (r.platform||"").toLowerCase();}
-function salesOf(r){ // 平台口径不同:Amazon 用月销;其余用 sold(累计)。返回 {val, kind}
-  if(r.month_sales!=null) return {val:+r.month_sales, kind:"月销"};
+/* 销量口径:按 平台 + 采集源 显式判定,不再"哪个非空用哪个"。
+   Sorftime 采的 amazon/temu/tiktok/walmart 都有真实月销;
+   插件(plugin-v5.3)采的 AE/SHEIN/Temu 只有累计销量。
+   同一个 Temu 平台里两种口径并存 —— 必须分开排名,混在一起分位权重就是噪音。*/
+function isPluginRow(r){ return String(r.source||"").toLowerCase().startsWith("plugin"); }
+function salesOf(r){
+  if(!isPluginRow(r) && r.month_sales!=null) return {val:+r.month_sales, kind:"月销"};
   if(r.sold!=null) return {val:+r.sold, kind:"累计"};
+  if(r.month_sales!=null) return {val:+r.month_sales, kind:"月销"};
   return {val:null, kind:""};
 }
+/* 分位池的键:平台 + 口径。这是修掉"新老 Temu 混排"的关键一行。*/
+function salesPoolKey(r){ return (r.platform||"?")+"|"+(salesOf(r).kind||"-"); }
 function normTitle(t){return (t||"").toLowerCase().replace(/^item\s+picture\s+/,"").replace(/\s+/g," ").trim();}
 function normalize(rows){
   return rows.map(r=>{
@@ -544,7 +571,7 @@ function isLace(row){ return row.elements.some(e=>e.axis==="lace"); }
 /* —— 销量平台内分位权重(跨平台对齐用) —— */
 function computeSalesWeights(rows){
   const byPlat={};
-  rows.forEach(r=>{const p=r.platform; (byPlat[p]=byPlat[p]||[]).push(r);});
+  rows.forEach(r=>{const p=salesPoolKey(r); (byPlat[p]=byPlat[p]||[]).push(r);});
   for(const p in byPlat){
     const arr=byPlat[p].map(r=>({r, v:salesOf(r).val})).filter(o=>o.v!=null);
     arr.sort((a,b)=>a.v-b.v);
@@ -574,8 +601,9 @@ function buildElements(rows){
     const sw=r._salesW??0, rw=recencyW(r), gw=r._growth;
     r.elements.forEach(e=>{
       const m=map[e.key]||(map[e.key]={key:e.key,axis:e.axis,label:e.label,
-        n:0,prods:new Set(),plats:new Set(),salesW:0,recW:0,growthArr:[]});
+        n:0,prods:new Set(),plats:new Set(),byPlat:{},salesW:0,recW:0,growthArr:[]});
       m.n++; m.prods.add(r.pkey); m.plats.add(r.platform);
+      (m.byPlat[r.platform]=m.byPlat[r.platform]||new Set()).add(r.pkey);
       m.salesW+=sw; m.recW+=rw; if(gw!=null)m.growthArr.push(gw);
     });
   });
@@ -583,6 +611,7 @@ function buildElements(rows){
     const nP=m.prods.size, nPlat=m.plats.size;
     return {key:m.key,axis:m.axis,label:m.label,
       products:nP, platforms:nPlat, platSet:[...m.plats],
+      prodByPlat:Object.fromEntries(Object.entries(m.byPlat).map(([p,st])=>[p,st.size])),
       overlap:nP*nPlat,
       salesW:m.salesW/m.n, recW:m.recW/m.n,
       growth:m.growthArr.length?m.growthArr.reduce((a,b)=>a+b,0)/m.growthArr.length:null};
@@ -717,7 +746,7 @@ const RAW_COLS=[
   {k:"image",label:"图"},
   {k:"title",label:"标题"},
   {k:"platform",label:"平台"},
-  {k:"month_sales",label:"销量",s:true,num:true},
+  {k:"month_sales",label:"销量(标口径)",s:true,num:true},
   {k:"price",label:"价",s:true,num:true},
   {k:"potential",label:"潜力",s:true,num:true},
   {k:"reviews",label:"评论",s:true,num:true},
@@ -908,7 +937,7 @@ function reasonFor(r){
   return parts.join(" · ");
 }
 function renderPick(){
-  let data=UNIQ.filter(r=>r.elements.length);
+  let data=scoredRows().filter(r=>r.elements.length);
   if(pickState.lace==="lace")data=data.filter(r=>r._lace);
   data.forEach(r=>r._sc=productScore(r));
   if(pickState.sort==="sales")data.sort((a,b)=>(salesOf(b).val??-1)-(salesOf(a).val??-1));
@@ -1067,11 +1096,53 @@ function buildPotControls(){
     const b=el("button",potState.sort===k?"on":"",l);b.onclick=()=>{potState.sort=k;buildPotControls();renderPotency();};seg.appendChild(b);
   });
   c.appendChild(seg);
+  // 参与打分的平台 —— 勾一下就能看到新平台进来后势能榜怎么变(新旧口径并排对比)
+  const allPlats=[...new Set(UNIQ.map(r=>r.platform))].sort();
+  if(allPlats.length){
+    const w=el("div","ctl");
+    w.appendChild(el("label",null,"参与打分"));
+    const box=el("div","platbox");
+    allPlats.forEach(p=>{
+      const lb=el("label","platchk");
+      const cb=el("input");cb.type="checkbox";cb.checked=SCORING.has(p);
+      cb.onchange=()=>{
+        if(cb.checked)SCORING.add(p); else SCORING.delete(p);
+        rebuildScoring();
+        renderElem();renderPick();renderPotency();
+        const n=$("#pot-scope"); if(n) n.textContent=[...SCORING].join(" + ")||"(未选平台)";
+      };
+      lb.appendChild(cb);lb.appendChild(document.createTextNode(p));
+      box.appendChild(lb);
+    });
+    w.appendChild(box);c.appendChild(w);
+    const note=el("div","scopenote");
+    note.innerHTML=`当前口径:<b id="pot-scope">${[...SCORING].join(" + ")}</b> · 第①页始终显示全部平台`;
+    c.appendChild(note);
+  }
 }
 function renderPotency(){
   const host=$("#pot-list");if(!host)return;
-  const maxRetail=Math.max(1,...ELEM.map(e=>e.products));
-  const retailBy=Object.fromEntries(ELEM.map(e=>[e.key,e.products]));
+  /* 零售铺货不能裸加总:同一个关键词池,Amazon/Walmart 返回 46% 蕾丝,
+     Temu/TikTok 只有 33-37%,搜索更发散。直接把四个平台的款数相加,
+     款数多的平台会主导分母,蕾丝信号被稀释。
+     改成:先在每个平台内部除以该平台的最大元素款数,再对平台取均值。*/
+  /* 分母用 90 分位而不是最大值。用最大值的话 lace 会吃掉整个分母 ——
+     它是入场前提,几乎每条采集记录都含蕾丝(1855款),第二名只有 311,
+     结果 51 个元素里 48 个都判"黄金窗口",这一维等于没有区分度。
+     实测:max分母 黄金48/起量2/红海1;p90分母 黄金30/起量14/红海7;
+     p75 又过头(红海19,连 wrap 都被压成起量)。 */
+  const scoringPlats=[...SCORING].filter(p=>ELEM.some(e=>(e.prodByPlat||{})[p]));
+  const quantile=(arr,q)=>{ if(!arr.length)return 1; const a=arr.slice().sort((x,y)=>x-y);
+    const i=(a.length-1)*q, lo=Math.floor(i), hi=Math.ceil(i);
+    return a[lo]+(a[hi]-a[lo])*(i-lo); };
+  const denByPlat={};
+  scoringPlats.forEach(p=>{ denByPlat[p]=Math.max(1, quantile(ELEM.map(e=>(e.prodByPlat||{})[p]||0), 0.90)); });
+  const retailIdxBy={};
+  ELEM.forEach(e=>{
+    const vals=scoringPlats.map(p=>Math.min(1,((e.prodByPlat||{})[p]||0)/denByPlat[p]));
+    retailIdxBy[e.key]= vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0;
+  });
+  const retailBy=Object.fromEntries(ELEM.map(e=>[e.key,e.products]));   // 展示用:真实款数
   const els=new Set([...Object.keys(SIGNALS),...ELEM.map(e=>e.key)]);
   let rows=[];
   els.forEach(el0=>{
@@ -1080,10 +1151,10 @@ function renderPotency(){
     const adj=(FIT[el0]&&FIT[el0].adj!=null)?FIT[el0].adj:1.0;
     const base=baseFit(el0); const fit=base*adj;
     const yoyN=yoy!=null?Math.max(0,Math.min(1.2,yoy/1.5)):0;
-    const retailSat=Math.min(1,retail/maxRetail); const openness=1-retailSat;
+    const retailSat=Math.min(1,retailIdxBy[el0]||0); const openness=1-retailSat;
     const potency=yoyN*fit*(0.6+0.4*openness);
     let win; if(yoy==null)win={t:'—',c:'muted'};else if(yoy<=0)win={t:'退潮',c:'red'};else if(retailSat<0.33)win={t:'黄金窗口',c:'green'};else if(retailSat<0.66)win={t:'起量中',c:'teal'};else win={t:'偏红海',c:'orange'};
-    rows.push({el:el0,axisKey:AX_OF[el0]||'',axis:AXIS_LABEL[AX_OF[el0]]||'',yoy,share,retail,base,adj,fit,potency,win});
+    rows.push({el:el0,axisKey:AX_OF[el0]||'',axis:AXIS_LABEL[AX_OF[el0]]||'',yoy,share,retail,retailSat,base,adj,fit,potency,win});
   });
   rows=rows.filter(r=>r.yoy!=null||r.retail>0||r.share!=null);
   rows.forEach(r=>{ r.hasSignal = (r.yoy!=null || r.share!=null); });
@@ -1109,7 +1180,7 @@ function renderPotency(){
     tr.innerHTML=`<td><b>${esc(r.el)}</b></td><td class="subcell">${esc(r.axis)}</td>
       <td class="pnum ${r.yoy!=null?(r.yoy>0?'yoy-pos':'yoy-neg'):''}">${r.yoy!=null?(r.yoy*100).toFixed(0)+'%':'—'}</td>
       <td class="pnum">${r.share!=null?(r.share*100).toFixed(2)+'%':'—'}</td>
-      <td class="pnum">${r.retail||'—'}</td>
+      <td class="pnum">${r.retail||'—'}<div class="subcell">铺货度 ${(r.retailSat*100).toFixed(0)}</div></td>
       <td class="pnum">${r.fit.toFixed(2)}<div class="subcell">base ${r.base}</div></td>
       <td></td>
       <td class="pnum"><span class="potency-b">${(r.potency*100).toFixed(0)}</span></td>
@@ -1192,10 +1263,8 @@ async function load(){
     TAGGED=RAW.map(r=>{r.elements=tag(r);r._lace=isLace(r);return r;});
     computeGrowth(TAGGED);               // 需全部扫描记录算增速
     UNIQ=dedupeLatest(TAGGED);           // 一款一行(取最新一次抓取)
-    computeSalesWeights(UNIQ);
-    ELEM=buildElements(UNIQ);
-    elemBy=Object.fromEntries(ELEM.map(e=>[e.key,e]));
-    COMBOS=buildCombos(UNIQ);
+    computeSalesWeights(UNIQ);          // 分位权重按 平台+口径 分池,全部平台都算
+    rebuildScoring();                    // 元素/组合只用白名单内的平台
     const plats=[...new Set(UNIQ.map(r=>r.platform))];
     const lastScan=RAW[0]?.scan_ts;
     setStatus(`<b>${UNIQ.length}</b> 款 · ${RAW.length} 行 · ${plats.length} 平台 · 最近 ${fmtDate(lastScan)}`);
