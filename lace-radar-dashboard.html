@@ -236,6 +236,7 @@ td.pnum{text-align:right;font-variant-numeric:tabular-nums}
   .scopenote{font-size:10.5px;color:var(--muted);margin-top:6px;width:100%}
   .tag.kw{background:transparent;border:1px dashed var(--line);color:var(--muted);font-size:9.5px}
   .catchip{display:inline-block;padding:1px 6px;border-radius:3px;background:var(--line-soft);color:var(--muted);font-size:10px;white-space:nowrap}
+  .warnchip{display:inline-block;padding:0 4px;border-radius:3px;background:#fde8e8;color:#b33;font-size:9px;vertical-align:middle}
 </style>
 </head>
 <body>
@@ -486,7 +487,18 @@ const fmt=n=>n==null||isNaN(n)?"—":Number(n).toLocaleString("en-US");
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function daysSince(d){if(!d)return null;const t=new Date(d).getTime();if(isNaN(t))return null;return Math.max(0,Math.round((Date.now()-t)/864e5));}
 function relTime(d){const dd=daysSince(d);if(dd==null)return "—";if(dd===0)return "今天";if(dd===1)return "昨天";if(dd<30)return dd+"天前";if(dd<60)return "约1月前";return Math.round(dd/30)+"月前";}
-function cleanCat(s){if(!s)return "";return String(s).replace(/（排名[:：]?\s*(\d+)）/,(m,n)=>" #"+n).replace(/\(rank[:：]?\s*(\d+)\)/i," #$1").trim();}
+/* 类目名和排名必须拆开 ——
+   原来把 "(Rank: 463)" 转成 " #463" 保留在名字里,导致每个商品都有独一无二的"类目名",
+   实测 2555 个不同值,清理后只有 164 个,细分类目筛选器等于废掉。
+   Sorftime 有两种格式:英文 (Rank: N) 和中文（排名:N）,都要处理。*/
+const RANK_RE=/[\(（]\s*(?:rank|排名)\s*[:：]?\s*([0-9,]+)\s*[\)）]/i;
+function cleanCat(s){ if(!s)return ""; return String(s).replace(RANK_RE,"").replace(/\s+/g," ").trim(); }
+function catRankOf(s){ if(!s)return null; const m=String(s).match(RANK_RE); return m?Number(String(m[1]).replace(/,/g,"")):null; }
+/* 童装/男装识别:这是女装蕾丝系统,实测库里混进 35 款童装 + 12 款男装。
+   量不大(1.4%),但童装的 Girls' Lace Dress 会被算进蕾丝元素,拉高款数。
+   标出来、默认不参与打分,但第①页仍可见,方便你核对。*/
+const KIDMEN_RE=/(baby|toddler|infant|girls|boys|kids|children|\bmen(?:'|’)?s?\b|mens)/i;
+function isKidMen(r){ return KIDMEN_RE.test(String(r.subcat||"")) || KIDMEN_RE.test(String(r.title||"")); }
 function fmtDate(d){if(!d)return "—";const t=new Date(d);if(isNaN(t))return "—";const p=n=>String(n).padStart(2,"0");return t.getFullYear()+"-"+p(t.getMonth()+1)+"-"+p(t.getDate());}
 function dedupeLatest(rows){const m=new Map();rows.forEach(r=>{const ex=m.get(r.pkey);if(!ex||new Date(r.scan_ts)>new Date(ex.scan_ts))m.set(r.pkey,r);});return [...m.values()];}
 // SHEIN 图床(ltwebstatic)防盗链/限流 → 走公共图片代理绕过;其余平台原样
@@ -519,7 +531,7 @@ const DEFAULT_SCORING=["amazon","aliexpress","shein","temu"];
 let SCORING=new Set(DEFAULT_SCORING);
 const DEFAULT_SRC=["keyword","plugin"];
 let SCORING_SRC=new Set(DEFAULT_SRC);
-function scoredRows(){ return UNIQ.filter(r=>SCORING.has(r.platform)&&SCORING_SRC.has(srcGroup(r))); }
+function scoredRows(){ return UNIQ.filter(r=>SCORING.has(r.platform)&&SCORING_SRC.has(srcGroup(r))&&!r._kidmen); }
 function rebuildScoring(){
   const sub=scoredRows();
   ELEM=buildElements(sub);
@@ -561,7 +573,7 @@ function normalize(rows){
       url:r.url||"", reviews:r.reviews, rating:r.rating,
       month_sales:r.month_sales, sold:r.sold, sold_banded:r.sold_banded,
       potential:ex.potential_index, revenue:ex.month_revenue,
-      listing_date:ex.listing_date, subcat:cleanCat(ex.subcategory),
+      listing_date:ex.listing_date, subcat:cleanCat(ex.subcategory), subRank:catRankOf(ex.subcategory),
       seller:ex.seller_country,
       src_kw:Array.isArray(ex.source_keywords)?ex.source_keywords:[],
       cat:ex.category_name||null,
@@ -739,7 +751,7 @@ const rawState={platform:"all",lace:"all",sort:"month_sales",dir:"desc",sub:"all
 function buildRawControls(){
   const c=$("#raw-ctl"); c.innerHTML="";
   const plats=["all",...new Set(UNIQ.map(r=>r.platform))];
-  const subs=["all",...new Set(UNIQ.map(r=>r.subcat).filter(Boolean))].slice(0,40);
+  const subs=["all",...[...new Set(UNIQ.map(r=>r.subcat).filter(Boolean))].sort()];
   const sel=(lab,opts,val,on)=>{
     const w=el("div","ctl");w.appendChild(el("label",null,lab));
     const s=el("select");opts.forEach(o=>{const op=el("option",null,esc(o.l??o));op.value=o.v??o;if((o.v??o)===val)op.selected=true;s.appendChild(op);});
@@ -862,7 +874,10 @@ function renderRaw(){
       tr.appendChild(el("td","num",`<b>#${r.catRank}</b><div class="subcell"${inferred?' style="opacity:.55"':''}>${inferred?'按销量推算':'平台排名'}</div>`));
     } else tr.appendChild(el("td","num",'<span class="subcell" style="opacity:.5">—</span>'));
     // subcat
-    tr.appendChild(el("td",null,`<span class="subcell">${esc(r.subcat||"—")}</span>`));
+    tr.appendChild(el("td",null,
+      (r._kidmen?'<span class="warnchip">童/男装</span> ':'')+
+      `<span class="subcell">${esc(r.subcat||"—")}</span>`+
+      (r.subRank!=null?`<div class="subcell" style="opacity:.6">类目排名 #${r.subRank}</div>`:'')));
     // seller
     tr.appendChild(el("td",null,`<span class="subcell">${esc(r.seller||"—")}</span>`));
     // elements
@@ -1330,7 +1345,7 @@ async function load(){
     // 排序必须带唯一键 id.desc 兜底,否则翻页时同 scan_ts 的行会重复或漏掉
     const rows=await fetchAllRows(TABLE,"select=*&order=scan_ts.desc,id.desc");
     RAW=normalize(rows);
-    TAGGED=RAW.map(r=>{r.elements=tag(r);r._lace=isLace(r);return r;});
+    TAGGED=RAW.map(r=>{r.elements=tag(r);r._lace=isLace(r);r._kidmen=isKidMen(r);return r;});
     computeGrowth(TAGGED);               // 需全部扫描记录算增速
     UNIQ=dedupeLatest(TAGGED);           // 一款一行(取最新一次抓取)
     computeSalesWeights(UNIQ);   // 分位权重按 平台+口径 分池,全部平台都算
