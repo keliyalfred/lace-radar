@@ -497,7 +497,11 @@ function catRankOf(s){ if(!s)return null; const m=String(s).match(RANK_RE); retu
 /* 童装/男装识别:这是女装蕾丝系统,实测库里混进 35 款童装 + 12 款男装。
    量不大(1.4%),但童装的 Girls' Lace Dress 会被算进蕾丝元素,拉高款数。
    标出来、默认不参与打分,但第①页仍可见,方便你核对。*/
-const KIDMEN_RE=/(baby|toddler|infant|girls|boys|kids|children|\bmen(?:'|’)?s?\b|mens)/i;
+/* ⚠ 这里的词边界必须写对:第一版写了不带边界的 mens,
+   结果 "Wo-mens" 里就含 "mens" —— 实测误伤 2669 款(全库 38%),
+   而真童装只有 142 款、真男装 41 款。
+   用 (^|[^a-z]) … ([^a-z]|$) 做前后界,避开 JS 后顾的兼容性问题。*/
+const KIDMEN_RE=/(^|[^a-z])(baby|toddler|infant|girls?|boys?|kids?|children|men|men's|men’s|mens)([^a-z]|$)/i;
 function isKidMen(r){ return KIDMEN_RE.test(String(r.subcat||"")) || KIDMEN_RE.test(String(r.title||"")); }
 function fmtDate(d){if(!d)return "—";const t=new Date(d);if(isNaN(t))return "—";const p=n=>String(n).padStart(2,"0");return t.getFullYear()+"-"+p(t.getMonth()+1)+"-"+p(t.getDate());}
 function dedupeLatest(rows){const m=new Map();rows.forEach(r=>{const ex=m.get(r.pkey);if(!ex||new Date(r.scan_ts)>new Date(ex.scan_ts))m.set(r.pkey,r);});return [...m.values()];}
