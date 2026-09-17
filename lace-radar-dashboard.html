@@ -234,6 +234,7 @@ td.pnum{text-align:right;font-variant-numeric:tabular-nums}
   .platchk{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer}
   .platchk input{margin:0;cursor:pointer}
   .scopenote{font-size:10.5px;color:var(--muted);margin-top:6px;width:100%}
+  .tag.kw{background:transparent;border:1px dashed var(--line);color:var(--muted);font-size:9.5px}
 </style>
 </head>
 <body>
@@ -547,13 +548,18 @@ function normalize(rows){
     const platform=r.platform||"?";
     return {
       id:r.product_id, platform, source:r.source||"", scan_ts:r.scan_ts,
-      title, pkey:platform+"|"+normTitle(title).slice(0,80),
+      // pkey 优先用商品ID。原来用"平台+标题",卖家一改标题就当成两个款 ——
+      // 实测 Amazon 10.5% / Temu 24.5% / TikTok 20% 的款改过标题,
+      // 旧口径会多出 458 行重复,并且增速链断掉。没有ID才退回标题。
+      title, pkey:platform+"|"+((r.product_id&&String(r.product_id).trim())||normTitle(title).slice(0,80)),
       price:r.price, currency:r.currency||"", image:r.image_url||"",
       url:r.url||"", reviews:r.reviews, rating:r.rating,
       month_sales:r.month_sales, sold:r.sold, sold_banded:r.sold_banded,
       potential:ex.potential_index, revenue:ex.month_revenue,
       listing_date:ex.listing_date, subcat:cleanCat(ex.subcategory),
-      seller:ex.seller_country, extra:ex
+      seller:ex.seller_country,
+      src_kw:Array.isArray(ex.source_keywords)?ex.source_keywords:[],
+      extra:ex
     };
   });
 }
@@ -580,15 +586,34 @@ function computeSalesWeights(rows){
     byPlat[p].forEach(r=>{ if(r._salesW==null) r._salesW=0; });
   }
 }
-/* —— 增速:同 id 跨 scan_ts 的销量变化(数据够才有) —— */
+/* —— 增速 ——
+   口径 2026-09 重定:
+   1) 分组用 平台+商品ID,不用标题。卖家改一次标题,旧口径就当成两个款,增速链直接断。
+   2) 不比"最后两次",而是往前找第一个间隔 ≥14 天的快照。
+      month_sales 是近30天滚动值,两次快照隔4天的话两个窗口重叠26天,
+      只有13%的数据是新的 —— 实测近一半的款变化<5%,不是没动,是测不出来。
+   3) 间隔天数一起存下来显示,让人知道这个百分比是几天的变化;
+      间隔不足14天的标成"弱",不参与排序加权。 */
+const GROWTH_MIN_GAP=14;
 function computeGrowth(rows){
   const byId={};
-  rows.forEach(r=>{(byId[r.pkey]=byId[r.pkey]||[]).push(r);});
-  for(const id in byId){
-    const hist=byId[id].filter(r=>r.scan_ts).sort((a,b)=>new Date(a.scan_ts)-new Date(b.scan_ts));
-    if(hist.length>=2){
-      const a=salesOf(hist[hist.length-2]).val, b=salesOf(hist[hist.length-1]).val;
-      if(a!=null&&b!=null&&a>0){ const g=(b-a)/a; hist.forEach(r=>r._growth=g); }
+  rows.forEach(r=>{ const k=(r.platform||'?')+'|'+(r.id||''); (byId[k]=byId[k]||[]).push(r); });
+  for(const k in byId){
+    const hist=byId[k].filter(r=>r.scan_ts&&salesOf(r).val!=null)
+                      .sort((a,b)=>new Date(a.scan_ts)-new Date(b.scan_ts));
+    if(hist.length<2) continue;
+    const last=hist[hist.length-1], lastT=new Date(last.scan_ts).getTime();
+    let base=null;
+    for(let i=hist.length-2;i>=0;i--){
+      if((lastT-new Date(hist[i].scan_ts).getTime())/86400000 >= GROWTH_MIN_GAP){ base=hist[i]; break; }
+    }
+    const weak = !base;
+    if(!base) base=hist[0];               // 够不到14天就用最早那次,但标弱
+    const a=salesOf(base).val, b=salesOf(last).val;
+    const gap=Math.round((lastT-new Date(base.scan_ts).getTime())/86400000);
+    if(a!=null&&b!=null&&a>0&&gap>0){
+      const g=(b-a)/a;
+      byId[k].forEach(r=>{ r._growth=g; r._growthGap=gap; r._growthWeak=weak; });
     }
   }
 }
@@ -671,7 +696,7 @@ function buildCombos(rows){
    ============================================================ */
 const W={growth:30, recency:25, sales:25, combo:20};
 const W_LABEL={growth:"增速", recency:"上架新鲜", sales:"销量", combo:"组合强度"};
-function growthW(r){ return r._growth!=null ? Math.max(0,Math.min(1, r._growth/0.5)) : 0; } // +50%=满
+function growthW(r){ return (r._growth!=null && !r._growthWeak) ? Math.max(0,Math.min(1, r._growth/0.5)) : 0; } // +50%=满;间隔不足14天不计分
 // 组合排序分:增速 + 新鲜/新品占比 + 销量 + (复现×关联)
 function comboScore(c){
   const g=c.growthHeat!=null?Math.max(0,Math.min(1,c.growthHeat/0.5)):0;
@@ -738,7 +763,7 @@ function rawFiltered(){
   else if(rawState.quality==="both")r=r.filter(x=>x.image&&salesOf(x).val!=null);
   if(rawState.q)r=r.filter(x=>x.title.toLowerCase().includes(rawState.q));
   const key=rawState.sort, dir=rawState.dir==="desc"?-1:1;
-  const val=x=>{ if(key==="month_sales")return salesOf(x).val??-1; if(key==="scan_ts"||key==="listing_date")return new Date(x[key]||0).getTime(); return x[key]??-1;};
+  const val=x=>{ if(key==="month_sales")return salesOf(x).val??-1; if(key==="_growth")return x._growth??-999; if(key==="scan_ts"||key==="listing_date")return new Date(x[key]||0).getTime(); return x[key]??-1;};
   r.sort((a,b)=>{const va=val(a),vb=val(b);return (va<vb?-1:va>vb?1:0)*dir;});
   return r;
 }
@@ -747,6 +772,7 @@ const RAW_COLS=[
   {k:"title",label:"标题"},
   {k:"platform",label:"平台"},
   {k:"month_sales",label:"销量(标口径)",s:true,num:true},
+  {k:"_growth",label:"增速",s:true,num:true},
   {k:"price",label:"价",s:true,num:true},
   {k:"potential",label:"潜力",s:true,num:true},
   {k:"reviews",label:"评论",s:true,num:true},
@@ -755,6 +781,7 @@ const RAW_COLS=[
   {k:"subcat",label:"细分类目"},
   {k:"seller",label:"卖家"},
   {k:"elements",label:"元素"},
+  {k:"src_kw",label:"来源词"},
   {k:"scan_ts",label:"抓取",s:true},
 ];
 function renderRaw(){
@@ -791,6 +818,15 @@ function renderRaw(){
     tr.appendChild(el("td",null,`<span class="pbadge">${esc(r.platform)}</span>`));
     // sales
     tr.appendChild(el("td","num",`<span class="sales-b">${fmt(s.val)}</span><div class="subcell">${s.kind}</div>`));
+    // growth
+    if(r._growth!=null){
+      const pct=(r._growth*100).toFixed(0);
+      const cls=r._growth>0?"yoy-pos":(r._growth<0?"yoy-neg":"");
+      const weak=r._growthWeak?' style="opacity:.45"':'';
+      tr.appendChild(el("td","num",`<span class="${cls}"${weak}>${r._growth>0?"+":""}${pct}%</span><div class="subcell">${r._growthGap}天${r._growthWeak?" · 弱":""}</div>`));
+    } else {
+      tr.appendChild(el("td","num",`<span class="subcell">—</span><div class="subcell" style="opacity:.55">仅1次</div>`));
+    }
     // price
     tr.appendChild(el("td","num",r.price!=null?`<b>$${fmt(r.price)}</b>`:"—"));
     // potential
@@ -810,6 +846,15 @@ function renderRaw(){
     if(r.elements.length){const tg=el("div","tags");r.elements.slice(0,6).forEach(e=>tg.appendChild(el("span","tag"+(e.axis==="lace"?"":" ax"),esc(e.label))));tdEl.appendChild(tg);}
     else tdEl.innerHTML='<span class="subcell">—</span>';
     tr.appendChild(tdEl);
+    // source keywords
+    const tdKw=el("td","t-el");
+    if(r.src_kw&&r.src_kw.length){
+      const kg=el("div","tags");
+      r.src_kw.slice(0,3).forEach(k=>kg.appendChild(el("span","tag kw",esc(k))));
+      if(r.src_kw.length>3) kg.appendChild(el("span","tag kw","+"+(r.src_kw.length-3)));
+      tdKw.appendChild(kg);
+    } else tdKw.innerHTML='<span class="subcell" style="opacity:.55">—</span>';
+    tr.appendChild(tdKw);
     // scan
     tr.appendChild(el("td",null,`<span class="subcell">${fmtDate(r.scan_ts)}</span><div class="subcell" style="opacity:.65">${relTime(r.scan_ts)}</div>`));
     tbody.appendChild(tr);
