@@ -487,22 +487,34 @@ const fmt=n=>n==null||isNaN(n)?"—":Number(n).toLocaleString("en-US");
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function daysSince(d){if(!d)return null;const t=new Date(d).getTime();if(isNaN(t))return null;return Math.max(0,Math.round((Date.now()-t)/864e5));}
 function relTime(d){const dd=daysSince(d);if(dd==null)return "—";if(dd===0)return "今天";if(dd===1)return "昨天";if(dd<30)return dd+"天前";if(dd<60)return "约1月前";return Math.round(dd/30)+"月前";}
-/* 类目名和排名必须拆开 ——
-   原来把 "(Rank: 463)" 转成 " #463" 保留在名字里,导致每个商品都有独一无二的"类目名",
-   实测 2555 个不同值,清理后只有 164 个,细分类目筛选器等于废掉。
-   Sorftime 有两种格式:英文 (Rank: N) 和中文（排名:N）,都要处理。*/
+/* 类目名和排名必须拆开:原来把 "(Rank: 463)" 转成 " #463" 留在名字里,
+   导致每个商品都有独一无二的"类目名" —— 实测 2555 个不同值,清理后只有 164 个,
+   细分类目筛选器等于废掉。Sorftime 有英文 (Rank: N) 和中文（排名:N）两种格式。*/
 const RANK_RE=/[\(（]\s*(?:rank|排名)\s*[:：]?\s*([0-9,]+)\s*[\)）]/i;
 function cleanCat(s){ if(!s)return ""; return String(s).replace(RANK_RE,"").replace(/\s+/g," ").trim(); }
 function catRankOf(s){ if(!s)return null; const m=String(s).match(RANK_RE); return m?Number(String(m[1]).replace(/,/g,"")):null; }
-/* 童装/男装识别:这是女装蕾丝系统,实测库里混进 35 款童装 + 12 款男装。
-   量不大(1.4%),但童装的 Girls' Lace Dress 会被算进蕾丝元素,拉高款数。
-   标出来、默认不参与打分,但第①页仍可见,方便你核对。*/
-/* ⚠ 这里的词边界必须写对:第一版写了不带边界的 mens,
-   结果 "Wo-mens" 里就含 "mens" —— 实测误伤 2669 款(全库 38%),
-   而真童装只有 142 款、真男装 41 款。
-   用 (^|[^a-z]) … ([^a-z]|$) 做前后界,避开 JS 后顾的兼容性问题。*/
+/* 童装/男装识别。⚠ 词边界必须写对:第一版用了不带边界的 mens,
+   "Wo-mens" 里就含 mens,实测误伤 2669 款(全库38%),而真童装只有142款、男装41款。*/
 const KIDMEN_RE=/(^|[^a-z])(baby|toddler|infant|girls?|boys?|kids?|children|men|men's|men’s|mens)([^a-z]|$)/i;
 function isKidMen(r){ return KIDMEN_RE.test(String(r.subcat||"")) || KIDMEN_RE.test(String(r.title||"")); }
+/* Amazon 的 category_report 接口不返回主图 —— 实测 1305 条类目扫榜数据 100% 无图
+   (另外三个平台的类目接口都有 photo)。两级兜底:
+   ① 从自己库里借:同一 ASIN 被关键词雷达抓到过的话,那条有真图
+   ② 按 ASIN 拼 Amazon 公开图片地址 —— 非官方承诺的接口,可能失效或个别款没有,
+      标记 imgGuess,加载失败由 onerror 隐藏,不留破图框 */
+function amazonImgByAsin(a){
+  return /^[A-Z0-9]{10}$/i.test(String(a||"")) ? "https://m.media-amazon.com/images/P/"+a+".01._SCLZZZZZZZ_.jpg" : "";
+}
+function fillMissingImages(rows){
+  const byId={}; rows.forEach(r=>{ if(r.image&&r.id&&!byId[r.id]) byId[r.id]=r.image; });
+  let borrowed=0,guessed=0;
+  rows.forEach(r=>{
+    if(r.image) return;
+    if(r.id&&byId[r.id]){ r.image=byId[r.id]; r.imgBorrowed=true; borrowed++; return; }
+    if(r.platform==="amazon"){ const u=amazonImgByAsin(r.id); if(u){ r.image=u; r.imgGuess=true; guessed++; } }
+  });
+  return {borrowed,guessed};
+}
 function fmtDate(d){if(!d)return "—";const t=new Date(d);if(isNaN(t))return "—";const p=n=>String(n).padStart(2,"0");return t.getFullYear()+"-"+p(t.getMonth()+1)+"-"+p(t.getDate());}
 function dedupeLatest(rows){const m=new Map();rows.forEach(r=>{const ex=m.get(r.pkey);if(!ex||new Date(r.scan_ts)>new Date(ex.scan_ts))m.set(r.pkey,r);});return [...m.values()];}
 // SHEIN 图床(ltwebstatic)防盗链/限流 → 走公共图片代理绕过;其余平台原样
@@ -520,6 +532,7 @@ function proxyImg(u){
 let RAW=[];          // normalized rows
 let TAGGED=[];       // rows with .elements (all scans)
 let UNIQ=[];         // one row per product (latest scan)
+let IMGFIX={borrowed:0,guessed:0};
 let ELEM=[];         // element aggregates
 let COMBOS=[];       // 蕾丝×非蕾丝 组合
 let PRODUCT_COMBOS={}; // pkey -> [combos]
@@ -530,7 +543,7 @@ const potState={sort:"potency"};
 
 /* 打分白名单:第①页永远显示全部;第②③⑤页只用勾选的平台+来源。
    默认不含 category —— 类目扫榜是"平台推给所有人的",关键词雷达是"我们主动找的",
-   两种采样方式加总做元素统计会得出说不清的口径。第⑤页可勾选合看。*/
+   实测两者蕾丝占比 7-12% vs 34-46%,加总会得出说不清的口径。第⑤页可勾选合看。*/
 const DEFAULT_SCORING=["amazon","aliexpress","shein","temu"];
 let SCORING=new Set(DEFAULT_SCORING);
 const DEFAULT_SRC=["keyword","plugin"];
@@ -544,10 +557,10 @@ function rebuildScoring(){
 }
 
 function platformOf(r){return (r.platform||"").toLowerCase();}
-/* 销量口径按 平台+采集源 显式判定。Sorftime 采的有真实月销,插件采的只有累计。
+/* 销量口径按 平台+采集源 显式判定:Sorftime 采的有真实月销,插件采的只有累计。
    同一个 Temu 里两种口径并存,必须分开排名,混在一起分位权重就是噪音。*/
 function isPluginRow(r){ return String(r.source||"").toLowerCase().startsWith("plugin"); }
-/* 采集来源三类,含义完全不同:keyword=关键词雷达(受词池限制) category=类目扫榜(补盲区) plugin=插件手动 */
+/* 采集来源三类:keyword=关键词雷达(受词池限制) category=类目扫榜(补盲区) plugin=插件手动 */
 function srcGroup(r){
   const x=String(r.source||"").toLowerCase();
   if(x.startsWith("plugin")) return "plugin";
@@ -570,8 +583,7 @@ function normalize(rows){
     const platform=r.platform||"?";
     return {
       id:r.product_id, platform, source:r.source||"", scan_ts:r.scan_ts,
-      // pkey 优先用商品ID:原来用"平台+标题",卖家改标题就成了两个款
-      // (实测 Amazon 10.5% / Temu 24.5% / TikTok 20% 改过标题)
+      // pkey 优先用商品ID:用"平台+标题"的话卖家改标题就成了两个款
       title, pkey:platform+"|"+((r.product_id&&String(r.product_id).trim())||normTitle(title).slice(0,80)),
       price:r.price, currency:r.currency||"", image:r.image_url||"",
       url:r.url||"", reviews:r.reviews, rating:r.rating,
@@ -613,9 +625,8 @@ function computeSalesWeights(rows){
 }
 /* —— 增速 ——
    1) 分组用 平台+商品ID(标题会被卖家改,用标题会断链)
-   2) 不比"最后两次",往前找第一个间隔≥14天的快照:
-      month_sales 是近30天滚动值,隔4天两窗口重叠26天,只有13%是新数据,
-      实测近一半的款变化<5% —— 不是没动,是测不出来
+   2) 往前找第一个间隔≥14天的快照:month_sales 是近30天滚动值,
+      隔4天两窗口重叠26天只有13%是新数据,实测近一半的款变化<5% —— 不是没动,是测不出来
    3) 间隔天数一起显示;不足14天标"弱",不参与选品评分 */
 const GROWTH_MIN_GAP=14;
 function computeGrowth(rows){
@@ -628,7 +639,7 @@ function computeGrowth(rows){
     const last=hist[hist.length-1], lastT=new Date(last.scan_ts).getTime();
     let base=null;
     for(let i=hist.length-2;i>=0;i--){
-      if((lastT-new Date(hist[i].scan_ts).getTime())/86400000 >= GROWTH_MIN_GAP){ base=hist[i]; break; }
+      if((lastT-new Date(hist[i].scan_ts).getTime())/86400000>=GROWTH_MIN_GAP){ base=hist[i]; break; }
     }
     const weak=!base; if(!base) base=hist[0];
     const a=salesOf(base).val, b=salesOf(last).val;
@@ -718,7 +729,7 @@ function buildCombos(rows){
    ============================================================ */
 const W={growth:30, recency:25, sales:25, combo:20};
 const W_LABEL={growth:"增速", recency:"上架新鲜", sales:"销量", combo:"组合强度"};
-function growthW(r){ return (r._growth!=null && !r._growthWeak) ? Math.max(0,Math.min(1, r._growth/0.5)) : 0; } // 间隔不足14天不计分
+function growthW(r){ return (r._growth!=null&&!r._growthWeak) ? Math.max(0,Math.min(1, r._growth/0.5)) : 0; } // 间隔不足14天不计分
 // 组合排序分:增速 + 新鲜/新品占比 + 销量 + (复现×关联)
 function comboScore(c){
   const g=c.growthHeat!=null?Math.max(0,Math.min(1,c.growthHeat/0.5)):0;
@@ -764,7 +775,6 @@ function buildRawControls(){
   c.appendChild(sel("平台",plats.map(p=>({v:p,l:p==="all"?"全部":p})),rawState.platform,v=>rawState.platform=v));
   const srcs=["all",...new Set(UNIQ.map(r=>srcGroup(r)))];
   c.appendChild(sel("采集来源",srcs.map(x=>({v:x,l:x==="all"?"全部":(SRC_LABEL[x]||x)})),rawState.src,v=>rawState.src=v));
-  // 类目筛选跟随平台联动,避免跨平台类目混在一个下拉里
   const catPool=UNIQ.filter(r=>r.cat&&(rawState.platform==="all"||r.platform===rawState.platform));
   const cats=["all",...[...new Set(catPool.map(r=>r.cat))].sort()];
   if(cats.length>1) c.appendChild(sel("类目",cats.map(x=>({v:x,l:x==="all"?"全部类目":x})),rawState.cat,v=>rawState.cat=v));
@@ -841,9 +851,10 @@ function renderRaw(){
     // image
     const tdImg=el("td");
     const img=el("img","thumb-s");img.loading="lazy";img.referrerPolicy="no-referrer";img.alt="";
+    if(r.imgGuess) img.title="图片按 ASIN 推断,非接口返回";
     img.onerror=()=>{ if(!img._fb&&r.image&&proxyImg(r.image)!==r.image){img._fb=1;img.src=r.image;} else img.style.visibility="hidden"; };
     img.src=proxyImg(r.image)||"";
-    if(r.image)bindZoom(img,r.image);
+    if(r.image)bindZoom(img,r.image);   // 悬停放大:补的图同样可放大
     tdImg.appendChild(img); tr.appendChild(tdImg);
     // title
     tr.appendChild(el("td","t-title",
@@ -1185,16 +1196,16 @@ function buildPotControls(){
   });
   c.appendChild(seg);
   const refresh=()=>{ rebuildScoring(); renderElem(); renderPick(); renderPotency();
-    const n=$("#pot-scope");
-    if(n) n.textContent=[...SCORING].join(" + ")+" / "+[...SCORING_SRC].map(x=>SRC_LABEL[x]||x).join(" + "); };
+    const nn=$("#pot-scope");
+    if(nn) nn.textContent=[...SCORING].join(" + ")+" / "+[...SCORING_SRC].map(x=>SRC_LABEL[x]||x).join(" + "); };
   const allPlats=[...new Set(UNIQ.map(r=>r.platform))].sort();
   if(allPlats.length){
     const w=el("div","ctl"); w.appendChild(el("label",null,"参与打分"));
     const box=el("div","platbox");
-    allPlats.forEach(p=>{
-      const lb=el("label","platchk"); const cb=el("input"); cb.type="checkbox"; cb.checked=SCORING.has(p);
-      cb.onchange=()=>{ if(cb.checked)SCORING.add(p); else SCORING.delete(p); refresh(); };
-      lb.appendChild(cb); lb.appendChild(document.createTextNode(p)); box.appendChild(lb);
+    allPlats.forEach(pp=>{
+      const lb=el("label","platchk"); const cb=el("input"); cb.type="checkbox"; cb.checked=SCORING.has(pp);
+      cb.onchange=()=>{ if(cb.checked)SCORING.add(pp); else SCORING.delete(pp); refresh(); };
+      lb.appendChild(cb); lb.appendChild(document.createTextNode(pp)); box.appendChild(lb);
     });
     w.appendChild(box); c.appendChild(w);
   }
@@ -1215,8 +1226,7 @@ function buildPotControls(){
 }
 function renderPotency(){
   const host=$("#pot-list");if(!host)return;
-  /* 零售铺货不能裸加总,也不能拿最大值当分母:
-     lace 是入场前提,几乎每条记录都含蕾丝(1855款),第二名只有311,
+  /* 零售铺货不能裸加总,也不能拿最大值当分母:lace 是入场前提,几乎每条记录都含蕾丝,
      用最大值做分母的话 51 个元素里 48 个都判"黄金窗口",这一维等于没区分度。
      改成:每个平台内部除以该平台元素款数的 90 分位,再对平台取均值。
      实测 max分母 黄金48/起量2/红海1;p90 黄金30/起量14/红海7;p75 又过头(红海19)。*/
@@ -1225,7 +1235,7 @@ function renderPotency(){
     const i=(a.length-1)*q, lo=Math.floor(i), hi=Math.ceil(i);
     return a[lo]+(a[hi]-a[lo])*(i-lo); };
   const denByPlat={};
-  scoringPlats.forEach(p=>{ denByPlat[p]=Math.max(1, quantile(ELEM.map(e=>(e.prodByPlat||{})[p]||0), 0.90)); });
+  scoringPlats.forEach(p=>{ denByPlat[p]=Math.max(1,quantile(ELEM.map(e=>(e.prodByPlat||{})[p]||0),0.90)); });
   const retailIdxBy={};
   ELEM.forEach(e=>{
     const vals=scoringPlats.map(p=>Math.min(1,((e.prodByPlat||{})[p]||0)/denByPlat[p]));
@@ -1349,6 +1359,7 @@ async function load(){
     // 排序必须带唯一键 id.desc 兜底,否则翻页时同 scan_ts 的行会重复或漏掉
     const rows=await fetchAllRows(TABLE,"select=*&order=scan_ts.desc,id.desc");
     RAW=normalize(rows);
+    IMGFIX=fillMissingImages(RAW);
     TAGGED=RAW.map(r=>{r.elements=tag(r);r._lace=isLace(r);r._kidmen=isKidMen(r);return r;});
     computeGrowth(TAGGED);               // 需全部扫描记录算增速
     UNIQ=dedupeLatest(TAGGED);           // 一款一行(取最新一次抓取)
@@ -1356,7 +1367,9 @@ async function load(){
     rebuildScoring();            // 元素/组合只用白名单内的平台+来源
     const plats=[...new Set(UNIQ.map(r=>r.platform))];
     const lastScan=RAW[0]?.scan_ts;
-    setStatus(`<b>${UNIQ.length}</b> 款 · ${RAW.length} 行 · ${plats.length} 平台 · 最近 ${fmtDate(lastScan)}`);
+    const imgNote=(IMGFIX.borrowed||IMGFIX.guessed)
+      ? ` · 补图 ${IMGFIX.borrowed+IMGFIX.guessed}(借用${IMGFIX.borrowed}/推断${IMGFIX.guessed})` : "";
+    setStatus(`<b>${UNIQ.length}</b> 款 · ${RAW.length} 行 · ${plats.length} 平台 · 最近 ${fmtDate(lastScan)}${imgNote}`);
     // render all
     buildRawControls();renderRaw();
     buildWeights();buildElemControls();renderElem();
